@@ -129,8 +129,8 @@ bool does_feqmod_breakdown(double mass_pion0, double T, double F, double bulkPi,
     double neq_fact = T * T * T / two_pi2_hbarC3;
     double J20_fact = T * neq_fact;
 
-    double neq_pion0 = neq_fact * GaussThermal(neq_int, pbar_root1, pbar_weight1, laguerre_pts, mbar_pion0, 0., 0., -1.);
-    double J20_pion0 = J20_fact * GaussThermal(J20_int, pbar_root2, pbar_weight2, laguerre_pts, mbar_pion0, 0., 0., -1.);
+    double neq_pion0 = neq_fact * GaussThermal(neq_int, pbar_root1, pbar_weight1, laguerre_pts, mbar_pion0, 0., 0.,0.,0.,0.,0., -1.);
+    double J20_pion0 = J20_fact * GaussThermal(J20_int, pbar_root2, pbar_weight2, laguerre_pts, mbar_pion0, 0., 0.,0.,0.,0.,0., -1.);
 
     bool pion_density_negative = is_linear_pion0_density_negative(T, neq_pion0, J20_pion0, bulkPi, F, betabulk);
 
@@ -877,7 +877,7 @@ EmissionFunctionArray::EmissionFunctionArray(ParameterReader* paraRdr_in, Table*
 	{
 	  //this matches format read by afterburner here : https://github.com/jbernhard/urqmd-afterburner/tree/f532416d241c23c2c3199ee21ce3c262843fdc90
 	  //write the header
-	  spectraFile << "# " << num_particles << "\n";
+	  spectraFile << "# event " << ievent << "\n";
 	  //spectraFile << "n pid px py pz E m x y z t" << "\n";
 	  for (int ipart = 0; ipart < num_particles; ipart++)
 	    {
@@ -887,13 +887,14 @@ EmissionFunctionArray::EmissionFunctionArray(ParameterReader* paraRdr_in, Table*
 	      double t = particle_event_list[ievent][ipart].t;
 	      double z = particle_event_list[ievent][ipart].z;
 
-	      double m  = particle_event_list[ievent][ipart].mass;
+	      double mass  = particle_event_list[ievent][ipart].mass;
 	      double E  = particle_event_list[ievent][ipart].E;
 	      double px = particle_event_list[ievent][ipart].px;
 	      double py = particle_event_list[ievent][ipart].py;
 	      double pz = particle_event_list[ievent][ipart].pz;
-	      spectraFile << mcid << " " << scientific <<  setw(5) << setprecision(16) << t << " " << x << " " << y << " " << z << " " << E << " " << px << " " << py << " " << pz << "\n";
+	      spectraFile << mcid << " " << scientific <<  setw(5) << setprecision(16) << t << " " << x << " " << y << " " << z << " "<< mass <<" "<< E << " " << px << " " << py << " " << pz << "\n";
 	    }//ipart
+      spectraFile << "# event " << ievent << " end" << "\n";
 	}
     } // ievent
 
@@ -1276,6 +1277,7 @@ void EmissionFunctionArray::calculate_spectra(std::vector< std::vector <Sampled_
     //particle info
     particle_info *particle;
     double *Mass, *Sign, *Degeneracy, *Baryon;
+    double *Charge, *Strange;
     int *MCID;
     double *Equilibrium_Density, *Bulk_Density, *Diffusion_Density;
 
@@ -1283,6 +1285,8 @@ void EmissionFunctionArray::calculate_spectra(std::vector< std::vector <Sampled_
     Sign = (double*)calloc(number_of_chosen_particles, sizeof(double));
     Degeneracy = (double*)calloc(number_of_chosen_particles, sizeof(double));
     Baryon = (double*)calloc(number_of_chosen_particles, sizeof(double));
+    Strange = (double*)calloc(number_of_chosen_particles, sizeof(double));
+    Charge = (double*)calloc(number_of_chosen_particles, sizeof(double));
 
     MCID = (int*)calloc(number_of_chosen_particles, sizeof(int));
 
@@ -1300,6 +1304,8 @@ void EmissionFunctionArray::calculate_spectra(std::vector< std::vector <Sampled_
       Sign[ipart] = particle->sign;
       Degeneracy[ipart] = particle->gspin;
       Baryon[ipart] = particle->baryon;
+      Strange[ipart] = particle->strange;
+      Charge[ipart] = particle->charge;
       MCID[ipart] = particle->mc_id;
       Equilibrium_Density[ipart] = particle->equilibrium_density;
       Bulk_Density[ipart] = particle->bulk_density;
@@ -1325,7 +1331,11 @@ void EmissionFunctionArray::calculate_spectra(std::vector< std::vector <Sampled_
 
     // freezeout surface info exclusive for VH
     double *E, *T, *P;
-    if (MODE == 0 || MODE == 1 || MODE == 4 || MODE == 5 || MODE == 6 || MODE == 7)
+    if (MODE == 0 || MODE == 1 || MODE == 4 || MODE == 5 || MODE == 6 || MODE == 7 || MODE == 8 || MODE == 9 || MODE == 10)
+    {
+      E = (double*)calloc(FO_length, sizeof(double));
+      P = (double*)calloc(FO_length, sizeof(double));
+    }
     {
       E = (double*)calloc(FO_length, sizeof(double));
       P = (double*)calloc(FO_length, sizeof(double));
@@ -1339,6 +1349,7 @@ void EmissionFunctionArray::calculate_spectra(std::vector< std::vector <Sampled_
     double *dat, *dax, *day, *dan;
     double *pixx, *pixy, *pixn, *piyy, *piyn, *bulkPi;
     double *muB, *nB, *Vx, *Vy, *Vn;
+    double *muS, *nS, *muQ, *nQ;
 
     tau = (double*)calloc(FO_length, sizeof(double));
     x = (double*)calloc(FO_length, sizeof(double));
@@ -1375,6 +1386,18 @@ void EmissionFunctionArray::calculate_spectra(std::vector< std::vector <Sampled_
       Vx = (double*)calloc(FO_length, sizeof(double));
       Vy = (double*)calloc(FO_length, sizeof(double));
       Vn = (double*)calloc(FO_length, sizeof(double));
+    }
+    if(INCLUDE_BARYON && !INCLUDE_BARYONDIFF_DELTAF)
+    {
+      muB = (double*)calloc(FO_length, sizeof(double));
+      nB = (double*)calloc(FO_length, sizeof(double));
+    }
+    if( MODE == 8 || MODE == 9 || MODE == 10)
+    {
+      muQ = (double*)calloc(FO_length, sizeof(double));
+      nQ = (double*)calloc(FO_length, sizeof(double));
+      muS = (double*)calloc(FO_length, sizeof(double));
+      nS = (double*)calloc(FO_length, sizeof(double));
     }
 
     //thermal vorticity tensor for polarization studies
@@ -1422,7 +1445,7 @@ void EmissionFunctionArray::calculate_spectra(std::vector< std::vector <Sampled_
       //reading info from surface
       surf = &surf_ptr[icell];
 
-      if (MODE == 0 || MODE == 1 || MODE == 4 || MODE == 5 || MODE == 6 || MODE == 7)
+      if (MODE == 0 || MODE == 1 || MODE == 4 || MODE == 5 || MODE == 6 || MODE == 7 || MODE == 8 || MODE == 9 || MODE == 10)
       {
         E[icell] = surf->E;
         P[icell] = surf->P;
@@ -1466,6 +1489,23 @@ void EmissionFunctionArray::calculate_spectra(std::vector< std::vector <Sampled_
         Vy[icell] = surf->Vy;
         Vn[icell] = surf->Vn;
       }
+      if(INCLUDE_BARYON && !INCLUDE_BARYONDIFF_DELTAF)
+      {
+        muB[icell] = surf->muB;
+        nB[icell] = surf->nB;
+      }
+      if( MODE == 8 || MODE == 9 || MODE == 10){
+        muQ[icell] = surf->muQ;
+        nQ[icell] = surf->nQ;
+        muS[icell] = surf->muS;
+        nS[icell] = surf->nS;
+      }
+      else{
+        muQ[icell] = 0.0;
+        nQ[icell] = 0.0;
+        muS[icell] = 0.0;
+        nS[icell] = 0.0;
+      }
 
       if (MODE == 5)
       {
@@ -1500,11 +1540,12 @@ void EmissionFunctionArray::calculate_spectra(std::vector< std::vector <Sampled_
 
     // compute the particle spectra
 
-    if (MODE == 0 || MODE == 1 || MODE == 4 || MODE == 5 || MODE == 6 || MODE == 7) // viscous hydro
+    if (MODE == 0 || MODE == 1 || MODE == 4 || MODE == 5 || MODE == 6 || MODE == 7 || MODE == 8 || MODE == 9 || MODE == 10)
     {
       switch(DF_MODE)
       {
         case 1: // 14 moment
+        case 8:
         case 2: // Chapman Enskog
         {
           switch(OPERATION)
@@ -1516,7 +1557,8 @@ void EmissionFunctionArray::calculate_spectra(std::vector< std::vector <Sampled_
             }
             case 1: // smooth CFF momentum distribution
             {
-              calculate_dN_pTdpTdphidy(Mass, Sign, Degeneracy, Baryon, T, P, E, tau, eta, ux, uy, un, dat, dax, day, dan, pixx, pixy, pixn, piyy, piyn, bulkPi, muB, nB, Vx, Vy, Vn, df_data);
+              calculate_dN_pTdpTdphidy(Mass, Sign, Degeneracy, Baryon, T, P, E, tau, eta, ux, uy, un, dat, dax, day, dan, pixx, pixy, pixn, piyy, piyn, bulkPi, muB, nB, muQ, nQ, muS, nS,
+                                       Vx, Vy, Vn, df_data, Charge, Strange);
               break;
             }
             case 2: // sample CFF
@@ -1524,7 +1566,8 @@ void EmissionFunctionArray::calculate_spectra(std::vector< std::vector <Sampled_
               if(OVERSAMPLE)
               {
                 // average particle yield
-                double Ntotal = calculate_total_yield(Equilibrium_Density, Bulk_Density, Diffusion_Density, T, P, E, tau, ux, uy, un, dat, dax, day, dan, pixx, pixy, pixn, piyy, piyn, bulkPi, muB, nB, Vx, Vy, Vn, df_data, gla);
+                double Ntotal = calculate_total_yield(Equilibrium_Density, Bulk_Density, Diffusion_Density, T, P, E, tau, ux, uy, un, dat, dax, day, dan, pixx, pixy, pixn, piyy, piyn, bulkPi, muB, nB, muQ, nQ, muS, nS,
+                                                      Vx, Vy, Vn, df_data, gla);
 		Ntotal = fabsf(Ntotal); //prevent overflow 
                 // number of events to sample
                 //Nevents = (int)ceil(MIN_NUM_HADRONS / Ntotal);
@@ -1539,9 +1582,12 @@ void EmissionFunctionArray::calculate_spectra(std::vector< std::vector <Sampled_
 
               if(DF_MODE == 1) printf("Sampling particles with Grad 14 moment df...\n");
               if(DF_MODE == 2) printf("Sampling particles with Chapman Enskog df...\n");
+              if(DF_MODE == 8) printf("Sampling particles with CCAKE df...\n");
 
-              sample_dN_pTdpTdphidy(Mass, Sign, Degeneracy, Baryon, MCID, Equilibrium_Density, Bulk_Density, Diffusion_Density, T, P, E, tau, x, y, eta, ux, uy, un, dat, dax, day, dan, pixx, pixy, pixn, piyy, piyn, bulkPi, muB, nB, Vx, Vy, Vn, df_data, gla, legendre);
-
+              std::cout << "sample started" << std::endl;
+              sample_dN_pTdpTdphidy(Mass, Sign, Degeneracy, Baryon, MCID, Equilibrium_Density, Bulk_Density, Diffusion_Density, T, P, E, tau, x, y, eta, ux, uy, un, dat, dax, day, dan, pixx, pixy, pixn, piyy, piyn, bulkPi, muB, nB, Vx, Vy, Vn, df_data, gla, legendre,
+                                    Charge, muQ, nQ, Strange, muS, nS);
+              std::cout << "sample finished" << std::endl;
               if(TEST_SAMPLER) // only for testing the sampler
               {
                 write_sampled_dN_dy_to_file_test(MCID);
@@ -1581,14 +1627,16 @@ void EmissionFunctionArray::calculate_spectra(std::vector< std::vector <Sampled_
             }
             case 1: // smooth CF
             {
-              calculate_dN_ptdptdphidy_feqmod(Mass, Sign, Degeneracy, Baryon, T, P, E, tau, eta, ux, uy, un, dat, dax, day, dan, pixx, pixy, pixn, piyy, piyn, bulkPi, muB, nB, Vx, Vy, Vn, gla, df_data);
+              calculate_dN_ptdptdphidy_feqmod(Mass, Sign, Degeneracy, Baryon, T, P, E, tau, eta, ux, uy, un, dat, dax, day, dan, pixx, pixy, pixn, piyy, piyn, bulkPi, muB, nB, 
+                                               Vx, Vy, Vn, gla, df_data);
               break;
             }
             case 2: // sampler
             {
               if(OVERSAMPLE)
               {
-                double Ntotal = calculate_total_yield(Equilibrium_Density, Bulk_Density, Diffusion_Density, T, P, E, tau, ux, uy, un, dat, dax, day, dan, pixx, pixy, pixn, piyy, piyn, bulkPi, muB, nB, Vx, Vy, Vn, df_data, gla);
+                double Ntotal =calculate_total_yield(Equilibrium_Density, Bulk_Density, Diffusion_Density, T, P, E, tau, ux, uy, un, dat, dax, day, dan, pixx, pixy, pixn, piyy, piyn, bulkPi, muB, nB, muQ, nQ, muS, nS,
+                                                      Vx, Vy, Vn, df_data, gla);
 		Ntotal = fabsf(Ntotal); //prevent overflow 
                 //Nevents = (int)ceil(MIN_NUM_HADRONS / Ntotal);
 		Nevents = min( (int)ceil(MIN_NUM_HADRONS / Ntotal) , MAX_NUM_SAMPLES );
@@ -1603,7 +1651,8 @@ void EmissionFunctionArray::calculate_spectra(std::vector< std::vector <Sampled_
               if(DF_MODE == 3) printf("Sampling particles with Mike's modified distribution...\n");
               if(DF_MODE == 4) printf("Sampling particles with Jonah's modified distribution...\n");
 
-              sample_dN_pTdpTdphidy(Mass, Sign, Degeneracy, Baryon, MCID, Equilibrium_Density, Bulk_Density, Diffusion_Density, T, P, E, tau, x, y, eta, ux, uy, un, dat, dax, day, dan, pixx, pixy, pixn, piyy, piyn, bulkPi, muB, nB, Vx, Vy, Vn, df_data, gla, legendre);
+              sample_dN_pTdpTdphidy(Mass, Sign, Degeneracy, Baryon, MCID, Equilibrium_Density, Bulk_Density, Diffusion_Density, T, P, E, tau, x, y, eta, ux, uy, un, dat, dax, day, dan, pixx, pixy, pixn, piyy, piyn, bulkPi, muB, nB, Vx, Vy, Vn, df_data, gla, legendre,
+                                    Charge, muQ, nQ, Strange, muS, nS);
 
 
               if(TEST_SAMPLER) // only for testing the sampler
@@ -1706,7 +1755,7 @@ void EmissionFunctionArray::calculate_spectra(std::vector< std::vector <Sampled_
     free(Sign);
     free(Baryon);
 
-    if (MODE == 0 || MODE == 1 || MODE == 4 || MODE == 5 || MODE == 6 || MODE == 7)
+    if (MODE == 0 || MODE == 1 || MODE == 4 || MODE == 5 || MODE == 6 || MODE == 7 || MODE == 8 || MODE == 9 || MODE == 10)
     {
       free(E);
       free(P);
@@ -1754,6 +1803,11 @@ void EmissionFunctionArray::calculate_spectra(std::vector< std::vector <Sampled_
       free(Vx);
       free(Vy);
       free(Vn);
+    }
+    if(INCLUDE_BARYON && !INCLUDE_BARYONDIFF_DELTAF)
+    {
+      free(muB);
+      free(nB);
     }
 
     if(MODE == 2)

@@ -29,7 +29,9 @@ void EmissionFunctionArray::calculate_dN_pTdpTdphidy(double *Mass, double *Sign,
   double *T_fo, double *P_fo, double *E_fo, double *tau_fo, double *eta_fo, double *ux_fo, double *uy_fo, double *un_fo,
   double *dat_fo, double *dax_fo, double *day_fo, double *dan_fo,
   double *pixx_fo, double *pixy_fo, double *pixn_fo, double *piyy_fo, double *piyn_fo, double *bulkPi_fo,
-  double *muB_fo, double *nB_fo, double *Vx_fo, double *Vy_fo, double *Vn_fo, Deltaf_Data *df_data)
+  double *muB_fo, double *nB_fo,
+  double *muQ_fo, double *nQ_fo, double *muS_fo, double *nS_fo,
+  double *Vx_fo, double *Vy_fo, double *Vn_fo, Deltaf_Data *df_data,double *Charge, double *Strange)
   {
     printf("computing thermal spectra from vhydro with df...\n\n");
 
@@ -176,11 +178,17 @@ void EmissionFunctionArray::calculate_dN_pTdpTdphidy(double *Mass, double *Sign,
 
         double muB = 0.0;                       // baryon chemical potential (GeV)
         double alphaB = 0.0;                    // muB / T
+        double muQ = 0.0;                       // electric chemical potential (GeV)
+        double alphaQ = 0.0;                    // muQ / T
+        double muS = 0.0;                       // strangeness chemical potential (GeV)
+        double alphaS = 0.0;                    // muS / T
         double nB = 0.0;                        // net baryon density (fm^-3)
         double Vt = 0.0;                        // contravariant net baryon diffusion V^mu (fm^-3)
         double Vx = 0.0;                        // enforce orthogonality V.u = 0
         double Vy = 0.0;
         double Vn = 0.0;
+        double nQ = 0.0;                        // net charge density (fm^-3)
+        double nS = 0.0;                        // net strangeness density (fm^-3)
         double baryon_enthalpy_ratio = 0.0;     // nB / (E + P)
 
         if(INCLUDE_BARYON && INCLUDE_BARYONDIFF_DELTAF)
@@ -195,9 +203,23 @@ void EmissionFunctionArray::calculate_dN_pTdpTdphidy(double *Mass, double *Sign,
           alphaB = muB / T;
           baryon_enthalpy_ratio = nB / (E + P);
         }
+        if(INCLUDE_BARYON && !INCLUDE_BARYONDIFF_DELTAF)
+        {
+          muB = muB_fo[icell_glb];
+          nB = nB_fo[icell_glb];
+        }
+        if(MODE ==8 || MODE == 9 || MODE == 10)
+        {
+          muQ = muQ_fo[icell_glb];
+          nQ = nQ_fo[icell_glb];
+          alphaQ = muQ / T;
+          muS = muS_fo[icell_glb];
+          nS = nS_fo[icell_glb];
+          alphaS = muS / T;
+        }
 
         // set df coefficients
-        deltaf_coefficients df = df_data->evaluate_df_coefficients(T, muB, E, P, bulkPi);
+        deltaf_coefficients df = df_data->evaluate_df_coefficients(T, muB, E, P, bulkPi,icell_glb);
 
         double c0 = df.c0;             // 14 moment coefficients
         double c1 = df.c1;
@@ -235,6 +257,14 @@ void EmissionFunctionArray::calculate_dN_pTdpTdphidy(double *Mass, double *Sign,
             bulk2_coeff = 1.0 / (3.0 * T * betabulk);
             break;
           }
+          case 8:
+          {
+            shear_coeff = 0.5 / ((E + P) * T * T);
+            bulk0_coeff = 0.0;
+            bulk1_coeff = 0.0;
+            bulk2_coeff = 0.0;
+            break;
+          }
           default:
           {
             printf("Error: set df_mode = (1,2) in parameters.dat\n"); exit(-1);
@@ -251,7 +281,11 @@ void EmissionFunctionArray::calculate_dN_pTdpTdphidy(double *Mass, double *Sign,
           double sign = Sign[ipart];              // quantum statistics sign
           double degeneracy = Degeneracy[ipart];  // spin degeneracy
           double baryon = Baryon[ipart];          // baryon number
-          double chem = baryon * alphaB;          // chemical potential term in feq
+          double strange = Strange[ipart];        // strangeness number
+          double charge = Charge[ipart];          // electric charge number
+          double chem = baryon * alphaB 
+                       + strange * alphaS
+                       + charge * alphaQ;  // chemical potential term in feq
 
           for(int ipT = 0; ipT < pT_tab_length; ipT++)
           {
@@ -318,6 +352,18 @@ void EmissionFunctionArray::calculate_dN_pTdpTdphidy(double *Mass, double *Sign,
 
                       df = feqbar * (df_shear + df_bulk + df_diff);
                       break;
+                    }
+                    case 8: //CCAKE
+                    { 
+                      double df_shear = pimunu_pmu_pnu / (2.* (E+P) * T*T);
+                      if(bulkPi > 0.001){
+                        std::cout << "Warning: bulk df not implemented yet for CCAKE"<< std::endl;
+                      }
+                      if(Vx > 0.001 || Vy > 0.001 || Vn > 0.001){
+                        std::cout << "Warning: baryon diffusion df not implemented yet for CCAKE"<< std::endl;
+                      }
+                      double df_bulk = 0.0;
+                      double df_diff = 0.0;
                     }
                     default:
                     {
@@ -563,6 +609,10 @@ void EmissionFunctionArray::calculate_dN_pTdpTdphidy(double *Mass, double *Sign,
 
         double muB = 0.0;                       // baryon chemical potential (GeV)
         double alphaB = 0.0;                    // muB / T
+        double alphaQ = 0.0;                       // electric chemical potential (GeV)
+        double nQ = 0.0;                       // net charge density (fm^-3)
+        double alphaS = 0.0;                    // muS / T
+        double muS = 0.0;                       // strangeness chemical potential (GeV)
         double nB = 0.0;                        // net baryon density (fm^-3)
         double Vt = 0.0;                        // contravariant net baryon diffusion V^mu (fm^-3)
         double Vx = 0.0;                        // enforce orthogonality V.u = 0
@@ -582,6 +632,11 @@ void EmissionFunctionArray::calculate_dN_pTdpTdphidy(double *Mass, double *Sign,
           alphaB = muB / T;
           baryon_enthalpy_ratio = nB / (E + P);
         }
+        if(INCLUDE_BARYON && !INCLUDE_BARYONDIFF_DELTAF)
+        {
+          muB = muB_fo[icell_glb];
+          nB = nB_fo[icell_glb];
+        }
 
         // regulate bulk pressure if goes out of bounds given
         // by Jonah's feqmod to avoid gsl interpolation errors
@@ -594,7 +649,7 @@ void EmissionFunctionArray::calculate_dN_pTdpTdphidy(double *Mass, double *Sign,
         }
 
         // set df coefficients
-        deltaf_coefficients df = df_data->evaluate_df_coefficients(T, muB, E, P, bulkPi);
+        deltaf_coefficients df = df_data->evaluate_df_coefficients(T, muB, E, P, bulkPi,icell_glb);
 
         // modified coefficients (Mike / Jonah)
         double F = df.F;
@@ -737,6 +792,8 @@ void EmissionFunctionArray::calculate_dN_pTdpTdphidy(double *Mass, double *Sign,
           double sign = Sign[ipart];              // quantum statistics sign
           double degeneracy = Degeneracy[ipart];  // spin degeneracy
           double baryon = Baryon[ipart];          // baryon number
+          double charge =  0.;          // electric charge number
+          double strange = 0.;        // strangeness number
 
           double chem = baryon * alphaB;          // chemical potential term in feq
           double chem_mod = baryon * alphaB_mod;  // chemical potential term in feqmod
@@ -751,15 +808,18 @@ void EmissionFunctionArray::calculate_dN_pTdpTdphidy(double *Mass, double *Sign,
               double mbar = mass / T;
               double mbar_mod = mass / T_mod;
 
-              double neq = neq_fact * degeneracy * GaussThermal(neq_int, pbar_root1, pbar_weight1, pbar_pts, mbar, alphaB, baryon, sign);
+              double neq = neq_fact * degeneracy * GaussThermal(neq_int, pbar_root1, pbar_weight1, pbar_pts, mbar, alphaB, baryon,
+                                         alphaQ, charge, alphaS, strange, sign);
 
-              double N10 = baryon * N10_fact * degeneracy * GaussThermal(J10_int, pbar_root1, pbar_weight1, pbar_pts, mbar, alphaB, baryon, sign);
+              double N10 = baryon * N10_fact * degeneracy * GaussThermal(J10_int, pbar_root1, pbar_weight1, pbar_pts, mbar, alphaB, baryon,
+                                         alphaQ, charge, alphaS, strange, sign);
 
-              double J20 = J20_fact * degeneracy * GaussThermal(J20_int, pbar_root2, pbar_weight2, pbar_pts, mbar, alphaB, baryon, sign);
+              double J20 = J20_fact * degeneracy * GaussThermal(J20_int, pbar_root2, pbar_weight2, pbar_pts, mbar, alphaB, baryon,
+                                         alphaQ, charge, alphaS, strange, sign);
 
               double n_linear = neq  +  dn_fact * (neq  +  N10 * G  +  J20 * F / T / T);
 
-              double n_mod = nmod_fact * degeneracy * GaussThermal(neq_int, pbar_root1, pbar_weight1, pbar_pts, mbar_mod, alphaB_mod, baryon, sign);
+              double n_mod = nmod_fact * degeneracy * GaussThermal(neq_int, pbar_root1, pbar_weight1, pbar_pts, mbar_mod, alphaB_mod, baryon,0.,0.,0.,0., sign);
 
               renorm = n_linear / n_mod;
             }
@@ -1228,11 +1288,17 @@ void EmissionFunctionArray::calculate_dN_pTdpTdphidy(double *Mass, double *Sign,
           alphaB = muB / T;
           baryon_enthalpy_ratio = nB / (E + P);
         }
+        if(INCLUDE_BARYON && INCLUDE_BARYONDIFF_DELTAF)
+        {
+          muB = muB_fo[icell];
+          nB = nB_fo[icell];
+          alphaB = muB / T;
+        }
 
         double chem = baryon * alphaB;          // chemical potential term in feq
 
         // set df coefficients
-        deltaf_coefficients df = df_data->evaluate_df_coefficients(T, muB, E, P, bulkPi);
+        deltaf_coefficients df = df_data->evaluate_df_coefficients(T, muB, E, P, bulkPi,icell);
 
         double c0 = df.c0;             // 14 moment coefficients
         double c1 = df.c1;
@@ -1270,6 +1336,15 @@ void EmissionFunctionArray::calculate_dN_pTdpTdphidy(double *Mass, double *Sign,
             bulk2_coeff = 1.0 / (3.0 * T * betabulk);
             break;
           }
+          case 8:
+            
+            {
+              shear_coeff = 0.5 / (T * T * (E + P));
+              bulk0_coeff = 0.0;
+              bulk1_coeff = 0.0;
+              bulk2_coeff = 0.0;
+              break;
+            }
           default:
           {
             printf("Error: set df_mode = (1,2) in parameters.dat\n"); exit(-1);
@@ -1603,6 +1678,8 @@ void EmissionFunctionArray::calculate_dN_pTdpTdphidy(double *Mass, double *Sign,
       double sign = Sign[ipart];              // quantum statistics sign
       double degeneracy = Degeneracy[ipart];  // spin degeneracy
       double baryon = Baryon[ipart];          // baryon number
+      double charge = 0.0;                       // charge number
+      double strange = 0.0;                       // strangeness number
 
       // reset spacetime distributions to zero
       for(int itau = 0; itau < taubins; itau++)
@@ -1701,7 +1778,16 @@ void EmissionFunctionArray::calculate_dN_pTdpTdphidy(double *Mass, double *Sign,
           alphaB = muB / T;
           baryon_enthalpy_ratio = nB / (E + P);
         }
-
+        if(INCLUDE_BARYON && INCLUDE_BARYONDIFF_DELTAF)
+        {
+          muB = muB_fo[icell];
+          nB = nB_fo[icell];
+          alphaB = muB / T;
+        }
+        double alphaS = 0.0;        
+        double nS = 0.0;
+        double nQ = 0.0;
+        double alphaQ = 0.0;
         // regulate bulk pressure if goes out of bounds given
         // by Jonah's feqmod to avoid gsl interpolation errors
         if(DF_MODE == 4)
@@ -1713,7 +1799,7 @@ void EmissionFunctionArray::calculate_dN_pTdpTdphidy(double *Mass, double *Sign,
         }
 
         // set df coefficients
-        deltaf_coefficients df = df_data->evaluate_df_coefficients(T, muB, E, P, bulkPi);
+        deltaf_coefficients df = df_data->evaluate_df_coefficients(T, muB, E, P, bulkPi,icell);
 
         // modified coefficients (Mike / Jonah)
         double F = df.F;
@@ -1859,15 +1945,18 @@ void EmissionFunctionArray::calculate_dN_pTdpTdphidy(double *Mass, double *Sign,
             double mbar = mass / T;
             double mbar_mod = mass / T_mod;
 
-            double neq = neq_fact * degeneracy * GaussThermal(neq_int, pbar_root1, pbar_weight1, pbar_pts, mbar, alphaB, baryon, sign);
+            double neq = neq_fact * degeneracy * GaussThermal(neq_int, pbar_root1, pbar_weight1, pbar_pts, mbar, alphaB, baryon,
+                                         alphaQ, charge, alphaS, strange, sign);
 
-            double N10 = baryon * N10_fact * degeneracy * GaussThermal(J10_int, pbar_root1, pbar_weight1, pbar_pts, mbar, alphaB, baryon, sign);
+            double N10 = baryon * N10_fact * degeneracy * GaussThermal(J10_int, pbar_root1, pbar_weight1, pbar_pts, mbar, alphaB, baryon,
+                                         alphaQ, charge, alphaS, strange, sign);
 
-            double J20 = J20_fact * degeneracy * GaussThermal(J20_int, pbar_root2, pbar_weight2, pbar_pts, mbar, alphaB, baryon, sign);
+            double J20 = J20_fact * degeneracy * GaussThermal(J20_int, pbar_root2, pbar_weight2, pbar_pts, mbar, alphaB, baryon,
+                                         alphaQ, charge, alphaS, strange, sign);
 
             double n_linear = neq  +  dn_fact * (neq  +  N10 * G  +  J20 * F / T / T);
 
-            double n_mod = nmod_fact * degeneracy * GaussThermal(neq_int, pbar_root1, pbar_weight1, pbar_pts, mbar_mod, alphaB_mod, baryon, sign);
+            double n_mod = nmod_fact * degeneracy * GaussThermal(neq_int, pbar_root1, pbar_weight1, pbar_pts, mbar_mod, alphaB_mod, baryon,0.,0.,0.,0., sign);
 
             renorm = n_linear / n_mod;
           }

@@ -2,26 +2,47 @@
 #include <stdlib.h>
 #include <cmath>
 #include "gaussThermal.h"
+#include <iostream>
 
 // gauss integration routine
-double GaussThermal(double thermal_integrand(double pbar, double mbar, double alphaB, double baryon, double sign), double * pbar_root, double * pbar_weight, int pbar_pts, double mbar, double alphaB, double baryon, double sign)
+double GaussThermal(double thermal_integrand(double pbar, double mbar, double alphaB, double baryon, double alphaQ, double charge, double alphaS, double strange, double sign), double * pbar_root, double * pbar_weight, int pbar_pts, double mbar, 
+					double alphaB, double baryon, double alphaQ, double charge, double alphaS, double strange,
+					double sign)
 {
 	double integral = 0.0;
 	for(int k = 0; k < pbar_pts; k++)
 	{
-		integral += pbar_weight[k] * thermal_integrand(pbar_root[k], mbar, alphaB, baryon, sign);
+		integral += pbar_weight[k] * thermal_integrand(pbar_root[k], mbar, alphaB,  baryon,  alphaQ,  charge,  alphaS, strange,sign);
 	}
 	return integral;
 }
 
 
 // equilibrium particle density
-double neq_int(double pbar, double mbar, double alphaB, double baryon, double sign)
+double neq_int(double pbar, double mbar, double alphaB, double baryon, double alphaQ, double charge, double alphaS, double strange, double sign)
 {
 	double Ebar = sqrt(pbar*pbar + mbar*mbar);
-
+	double chem = baryon * alphaB + charge * alphaQ + strange * alphaS;
 	// gauss laguerre (a = 1)
-	return pbar * exp(pbar) / (exp(Ebar - baryon*alphaB) + sign);
+	if (sign == -1)
+	{
+		if (chem >= Ebar)
+		{
+			//std::cout << "Warning: baryon * alphaB + charge * alphaQ + strange * alphaS >= Ebar" << std::endl;
+			return 0.0;
+		}
+		else
+		{
+			return pbar * exp(pbar) / (exp(Ebar - chem) + sign);
+		}
+	}
+	else
+	{
+		return pbar * exp(pbar) / (exp(Ebar - chem) + sign);
+	}
+
+
+	//return pbar * exp(pbar) / (exp(Ebar - baryon*alphaB) + sign);
 }
 
 // // equilibrium energy density
@@ -42,16 +63,16 @@ double neq_int(double pbar, double mbar, double alphaB, double baryon, double si
 
 
 // for linearized particle density corrections
-double J10_int(double pbar, double mbar, double alphaB, double baryon, double sign)
+double J10_int(double pbar, double mbar, double alphaB, double baryon, double alphaQ, double charge, double alphaS, double strange, double sign)
 {
 	double Ebar = sqrt(pbar*pbar + mbar*mbar);
-	double qstat = exp(Ebar - baryon*alphaB) + sign;
+	double qstat = exp(Ebar - baryon*alphaB - charge*alphaQ-strange*alphaS) + sign;
 
 	// gauss laguerre (a = 1)
-	return pbar * exp(pbar + Ebar - baryon*alphaB) / (qstat*qstat);
+	return pbar * exp(pbar + Ebar - baryon*alphaB - charge*alphaQ-strange*alphaS) / (qstat*qstat);
 }
 
-double J11_int(double pbar, double mbar, double alphaB, double baryon, double sign)
+double J11_int(double pbar, double mbar, double alphaB, double baryon, double alphaQ, double charge, double alphaS, double strange, double sign)
 {
 	double Ebar = sqrt(pbar * pbar + mbar * mbar);
 	double qstat = exp(Ebar - baryon * alphaB) + sign;
@@ -59,29 +80,29 @@ double J11_int(double pbar, double mbar, double alphaB, double baryon, double si
 	return pbar * pbar * pbar / (Ebar * Ebar) * exp(pbar + Ebar - baryon * alphaB) / (qstat * qstat);
 }
 
-double J20_int(double pbar, double mbar, double alphaB, double baryon, double sign)
+double J20_int(double pbar, double mbar, double alphaB,double baryon, double alphaQ, double charge, double alphaS, double strange, double sign)
 {
 	double Ebar = sqrt(pbar*pbar + mbar*mbar);
-	double qstat = exp(Ebar - baryon*alphaB) + sign;
+	double qstat = exp(Ebar - baryon*alphaB - charge*alphaQ-strange*alphaS) + sign;
 
 	// gauss laguerre (a = 2)
-	return Ebar * exp(pbar + Ebar - baryon*alphaB) / (qstat*qstat);
+	return Ebar * exp(pbar + Ebar - baryon*alphaB - charge*alphaQ-strange*alphaS) / (qstat*qstat);
 }
 
-double J30_int(double pbar, double mbar, double alphaB, double baryon, double sign)
+double J30_int(double pbar, double mbar, double alphaB,double baryon, double alphaQ, double charge, double alphaS, double strange, double sign)
 {
 	double Ebar = sqrt(pbar * pbar + mbar * mbar);
-	double qstat = exp(Ebar - baryon * alphaB) + sign;
+	double qstat = exp(Ebar - baryon*alphaB - charge*alphaQ-strange*alphaS) + sign;
 	// gauss laguerre (a = 3)
-	return Ebar * Ebar / pbar * exp(pbar + Ebar - baryon * alphaB) / (qstat * qstat);
+	return Ebar * Ebar / pbar * exp(pbar + Ebar - baryon*alphaB - charge*alphaQ-strange*alphaS) / (qstat * qstat);
 }
 
-double J31_int(double pbar, double mbar, double alphaB, double baryon, double sign)
+double J31_int(double pbar, double mbar, double alphaB, double baryon, double alphaQ, double charge, double alphaS, double strange, double sign)
 {
 	double Ebar = sqrt(pbar * pbar + mbar * mbar);
-	double qstat = exp(Ebar - baryon * alphaB) + sign;
+	double qstat = exp(Ebar - baryon*alphaB - charge*alphaQ-strange*alphaS) + sign;
 	// gauss laguerre (a = 3)
-	return pbar * exp(pbar + Ebar - baryon * alphaB) / (qstat * qstat);
+	return pbar * exp(pbar + Ebar - baryon*alphaB - charge*alphaQ-strange*alphaS) / (qstat * qstat);
 }
 
 

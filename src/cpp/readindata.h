@@ -44,6 +44,10 @@ class Plasma
     double pressure;                    // GeV / fm^3
     double baryon_chemical_potential;   // GeV
     double net_baryon_density;          // fm^-3
+    double net_charge_density;        // fm^-3
+    double net_strange_density; // fm^-3
+    double strange_chemical_potential; // GeV
+    double charge_chemical_potential; // GeV
 
     Plasma();
     void load_thermodynamic_averages();
@@ -84,8 +88,9 @@ typedef struct
    double E, T, P; //energy density, Temperature and Isotropic Thermal Pressure
    double pitt, pitx, pity, pitn, pixx, pixy, pixn, piyy, piyn, pinn; //contravariant components of shear stress tensor, or pi_perp^(\mu\nu) in case of VAH
    double bulkPi; //bulk pressure, or residual bulk pressure in case of VAH
-   double muB, muS; //baryon chemical potential, strangeness chem. pot.
+   double muB, muS , muQ; //baryon, strangeness and electric chemical potentials
    double nB, Vt, Vx, Vy, Vn; //baryon number density, contravariant baryon diffusion current, or in case of VAH transverse baryon diffusion vector
+   double nS, nQ; //strangeness and electric charge densities
 
    double wtx, wty, wtn, wxy, wxn, wyn; //the 6 components of the antisymmetric thermal vorticity with contravariant components w^\mu\nu
 
@@ -206,6 +211,9 @@ class FO_data_reader
         void read_surf_VH_MUSIC(long length, FO_surf * surf_ptr);
         void read_surf_VH_MUSIC_New(long length, FO_surf* surf_ptr);
         void read_surf_VH_hiceventgen(long length, FO_surf* surf_ptr);
+        void read_surf_CCAKE_boost_invariant(long length, FO_surf* surf_ptr);
+        void read_surf_CCAKE_3D(long length, FO_surf* surf_ptr);
+        void read_surf_CCAKE_v1_boost_invariant(long length, FO_surf* surf_ptr);
 };
 
 

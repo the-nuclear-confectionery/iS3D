@@ -49,173 +49,92 @@ Deltaf_Data::Deltaf_Data(ParameterReader * paraRdr_in)
 Deltaf_Data::~Deltaf_Data()
 {
   // is there any harm in deallocating memory, while it's being used?
-  gsl_spline_free(c0_spline);
-  gsl_spline_free(c2_spline);
-  gsl_spline_free(c3_spline);
-
-  gsl_spline_free(F_spline);
-  gsl_spline_free(betabulk_spline);
-  gsl_spline_free(betaV_spline);
-  gsl_spline_free(betapi_spline);
-
-  gsl_spline_free(lambda_squared_spline);
-  gsl_spline_free(z_spline);
+  //gsl_spline_free(c0_spline);
+  //gsl_spline_free(c2_spline);
+  //gsl_spline_free(c3_spline);
+//
+  //gsl_spline_free(F_spline);
+  //gsl_spline_free(betabulk_spline);
+  //gsl_spline_free(betaV_spline);
+  //gsl_spline_free(betapi_spline);
+//
+  //gsl_spline_free(lambda_squared_spline);
+  //gsl_spline_free(z_spline);
 }
 
 void Deltaf_Data::load_df_coefficient_data()
 {
-  printf("Reading in 14 moment and Chapman-Enskog coefficient tables...");
+    std::cout << "Reading in 14 moment and Chapman-Enskog coefficient tables..." << std::endl;
 
-  // now string join
-  char c0[100] = "";
-  char c1[100] = "";
-  char c2[100] = "";
-  char c3[100] = "";
-  char c4[100] = "";
+    // Define file paths
+    std::vector<std::string> file_names = {"c0.dat", "c1.dat", "c2.dat", "c3.dat", "c4.dat",
+                                           "F.dat", "G.dat", "betabulk.dat", "betaV.dat", "betapi.dat"};
+    std::vector<std::ifstream> files;
 
-  char F[100] = "";
-  char G[100] = "";
-  char betabulk[100] = "";
-  char betaV[100] = "";
-  char betapi[100] = "";
+    // Open files and check for errors
+    for (const auto& name : file_names) {
+        std::string full_path = hrg_eos_path + name;
+        files.emplace_back(full_path);
+        if (!files.back().is_open()) {
+            throw std::runtime_error("Couldn't open coefficient file: " + full_path);
+        }
+    }
 
-  sprintf(c0, "%s%s", hrg_eos_path.c_str(), "c0.dat");
-  sprintf(c1, "%s%s", hrg_eos_path.c_str(), "c1.dat");
-  sprintf(c2, "%s%s", hrg_eos_path.c_str(), "c2.dat");
-  sprintf(c3, "%s%s", hrg_eos_path.c_str(), "c3.dat");
-  sprintf(c4, "%s%s", hrg_eos_path.c_str(), "c4.dat");
+    // Read dimensions from the first line of each file
+    files[0] >> points_T >> points_muB;
+    for (size_t i = 1; i < files.size(); ++i) {
+        int temp_T, temp_muB;
+        files[i] >> temp_T >> temp_muB;
+        if (temp_T != points_T || temp_muB != points_muB) {
+            throw std::runtime_error("Mismatch in T and muB dimensions across files.");
+        }
+    }
 
-  sprintf(F, "%s%s", hrg_eos_path.c_str(), "F.dat");
-  sprintf(G, "%s%s", hrg_eos_path.c_str(), "G.dat");
-  sprintf(betabulk, "%s%s", hrg_eos_path.c_str(), "betabulk.dat");
-  sprintf(betaV, "%s%s", hrg_eos_path.c_str(), "betaV.dat");
-  sprintf(betapi, "%s%s", hrg_eos_path.c_str(), "betapi.dat");
+    if (!include_baryon) {
+        points_muB = 1;
+    }
 
+    // Skip headers in all files
+    for (auto& file : files) {
+        std::string header;
+        std::getline(file, header);
+        std::getline(file, header);
+    }
 
-  // coefficient files and names
-  FILE * c0_file = fopen(c0, "r"); // 14 moment (coefficients are scaled by some power of temperature)
-  FILE * c1_file = fopen(c1, "r");
-  FILE * c2_file = fopen(c2, "r");
-  FILE * c3_file = fopen(c3, "r");
-  FILE * c4_file = fopen(c4, "r");
+    // Initialize data storage
+    T_array.resize(points_T);
+    muB_array.resize(points_muB);
 
-  FILE * F_file = fopen(F, "r"); // Chapman Enskog (coefficients are scaled by some power of temperature)
-  FILE * G_file = fopen(G, "r");
-  FILE * betabulk_file = fopen(betabulk, "r");
-  FILE * betaV_file = fopen(betaV, "r");
-  FILE * betapi_file = fopen(betapi, "r");
+    std::vector<std::vector<std::vector<double>>> data(10, std::vector<std::vector<double>>(points_muB, std::vector<double>(points_T)));
 
-  if(c0_file == NULL) printf("Couldn't open c0 coefficient file!\n");
-  if(c1_file == NULL) printf("Couldn't open c1 coefficient file!\n");
-  if(c2_file == NULL) printf("Couldn't open c2 coefficient file!\n");
-  if(c3_file == NULL) printf("Couldn't open c3 coefficient file!\n");
-  if(c4_file == NULL) printf("Couldn't open c4 coefficient file!\n");
+    // Read data into arrays
+    for (int iB = 0; iB < points_muB; ++iB) {
+        for (int iT = 0; iT < points_T; ++iT) {
+            for (size_t i = 0; i < files.size(); ++i) {
+                files[i] >> T_array[iT] >> muB_array[iB] >> data[i][iB][iT];
+            }
+        }
+    }
 
-  if(F_file == NULL) printf("Couldn't open F coefficient file!\n");
-  if(G_file == NULL) printf("Couldn't open G coefficient file!\n");
-  if(betabulk_file == NULL) printf("Couldn't open betabulk coefficient file!\n");
-  if(betaV_file == NULL) printf("Couldn't open betaV coefficient file!\n");
-  if(betapi_file == NULL) printf("Couldn't open betapi coefficient file!\n");
+    // Assign data to respective members
+    c0_data = std::move(data[0]);
+    c1_data = std::move(data[1]);
+    c2_data = std::move(data[2]);
+    c3_data = std::move(data[3]);
+    c4_data = std::move(data[4]);
+    F_data = std::move(data[5]);
+    G_data = std::move(data[6]);
+    betabulk_data = std::move(data[7]);
+    betaV_data = std::move(data[8]);
+    betapi_data = std::move(data[9]);
 
-  // read 1st line (T dimension) and 2nd line (muB dimension)
-  // (c0, ..., c4) should have same (T,muB) dimensions
-  fscanf(c0_file, "%d\n%d\n", &points_T, &points_muB);
-  fscanf(c1_file, "%d\n%d\n", &points_T, &points_muB);
-  fscanf(c2_file, "%d\n%d\n", &points_T, &points_muB);
-  fscanf(c3_file, "%d\n%d\n", &points_T, &points_muB);
-  fscanf(c4_file, "%d\n%d\n", &points_T, &points_muB);
+    // Compute grid properties
+    T_min = T_array.front();
+    muB_min = muB_array.front();
+    dT = std::fabs(T_array[1] - T_array[0]);
+    dmuB = std::fabs(muB_array[1] - muB_array[0]);
 
-  fscanf(F_file, "%d\n%d\n", &points_T, &points_muB);
-  fscanf(G_file, "%d\n%d\n", &points_T, &points_muB);
-  fscanf(betabulk_file, "%d\n%d\n", &points_T, &points_muB);
-  fscanf(betaV_file, "%d\n%d\n", &points_T, &points_muB);
-  fscanf(betapi_file, "%d\n%d\n", &points_T, &points_muB);
-
-  if(!include_baryon) points_muB = 1;
-
-  // skip the header
-  char header[300];
-  fgets(header, 100, c0_file);
-  fgets(header, 100, c1_file);
-  fgets(header, 100, c2_file);
-  fgets(header, 100, c3_file);
-  fgets(header, 100, c4_file);
-
-  fgets(header, 100, F_file);
-  fgets(header, 100, G_file);
-  fgets(header, 100, betabulk_file);
-  fgets(header, 100, betaV_file);
-  fgets(header, 100, betapi_file);
-
-  // T and muB arrays
-  T_array = (double *)calloc(points_T, sizeof(double));
-  muB_array = (double *)calloc(points_muB, sizeof(double));
-
-  // coefficient data
-  c0_data = (double **)calloc(points_muB, sizeof(double));
-  c1_data = (double **)calloc(points_muB, sizeof(double));
-  c2_data = (double **)calloc(points_muB, sizeof(double));
-  c3_data = (double **)calloc(points_muB, sizeof(double));
-  c4_data = (double **)calloc(points_muB, sizeof(double));
-
-  F_data = (double **)calloc(points_muB, sizeof(double));
-  G_data = (double **)calloc(points_muB, sizeof(double));
-  betabulk_data = (double **)calloc(points_muB, sizeof(double));
-  betaV_data = (double **)calloc(points_muB, sizeof(double));
-  betapi_data = (double **)calloc(points_muB, sizeof(double));
-
-  // scan coefficient files
-  for(int iB = 0; iB < points_muB; iB++)  // muB
-  {
-    c0_data[iB] = (double *)calloc(points_T, sizeof(double));
-    c1_data[iB] = (double *)calloc(points_T, sizeof(double));
-    c2_data[iB] = (double *)calloc(points_T, sizeof(double));
-    c3_data[iB] = (double *)calloc(points_T, sizeof(double));
-    c4_data[iB] = (double *)calloc(points_T, sizeof(double));
-
-    F_data[iB] = (double *)calloc(points_T, sizeof(double));
-    G_data[iB] = (double *)calloc(points_T, sizeof(double));
-    betabulk_data[iB] = (double *)calloc(points_T, sizeof(double));
-    betaV_data[iB] = (double *)calloc(points_T, sizeof(double));
-    betapi_data[iB] = (double *)calloc(points_T, sizeof(double));
-
-    for(int iT = 0; iT < points_T; iT++)  // T
-    {
-      // set T and muB (fm^-1) arrays from file
-      fscanf(c0_file, "%lf\t\t%lf\t\t%lf\n", &T_array[iT], &muB_array[iB], &c0_data[iB][iT]);
-      fscanf(c1_file, "%lf\t\t%lf\t\t%lf\n", &T_array[iT], &muB_array[iB], &c1_data[iB][iT]);
-      fscanf(c2_file, "%lf\t\t%lf\t\t%lf\n", &T_array[iT], &muB_array[iB], &c2_data[iB][iT]);
-      fscanf(c3_file, "%lf\t\t%lf\t\t%lf\n", &T_array[iT], &muB_array[iB], &c3_data[iB][iT]);
-      fscanf(c4_file, "%lf\t\t%lf\t\t%lf\n", &T_array[iT], &muB_array[iB], &c4_data[iB][iT]);
-
-      fscanf(F_file, "%lf\t\t%lf\t\t%lf\n", &T_array[iT], &muB_array[iB], &F_data[iB][iT]);
-      fscanf(G_file, "%lf\t\t%lf\t\t%lf\n", &T_array[iT], &muB_array[iB], &G_data[iB][iT]);
-      fscanf(betabulk_file, "%lf\t\t%lf\t\t%lf\n", &T_array[iT], &muB_array[iB], &betabulk_data[iB][iT]);
-      fscanf(betaV_file, "%lf\t\t%lf\t\t%lf\n", &T_array[iT], &muB_array[iB], &betaV_data[iB][iT]);
-      fscanf(betapi_file, "%lf\t\t%lf\t\t%lf\n", &T_array[iT], &muB_array[iB], &betapi_data[iB][iT]);
-    } // iT
-  } // iB
-
-  T_min = T_array[0];
-  muB_min = muB_array[0];
-
-  // uniform grid
-  dT = fabs(T_array[1] - T_array[0]);
-  dmuB = fabs(muB_array[1] - muB_array[0]);
-
-  fclose(c0_file);
-  fclose(c1_file);
-  fclose(c2_file);
-  fclose(c3_file);
-  fclose(c4_file);
-
-  fclose(F_file);
-  fclose(G_file);
-  fclose(betabulk_file);
-  fclose(betaV_file);
-  fclose(betapi_file);
-
-  printf("done\n");
+    std::cout << "done" << std::endl;
 }
 
 
@@ -289,11 +208,11 @@ void Deltaf_Data::compute_jonah_coefficients(particle_info * particle_data, int 
   }
 
   // now construct cubic splines for lambda(bulkPi/Peq) and z(bulkPi/Peq)
-  lambda_squared_spline = gsl_spline_alloc(gsl_interp_cspline, jonah_points);
-  z_spline = gsl_spline_alloc(gsl_interp_cspline, jonah_points);
-
-  gsl_spline_init(lambda_squared_spline, bulkPi_over_Peq_array, lambda_squared_array, jonah_points);
-  gsl_spline_init(z_spline, bulkPi_over_Peq_array, z_array, jonah_points);
+  //lambda_squared_spline = gsl_spline_alloc(gsl_interp_cspline, jonah_points);
+  //z_spline = gsl_spline_alloc(gsl_interp_cspline, jonah_points);
+//
+  //gsl_spline_init(lambda_squared_spline, bulkPi_over_Peq_array, lambda_squared_array, jonah_points);
+  //gsl_spline_init(z_spline, bulkPi_over_Peq_array, z_array, jonah_points);
 }
 
 
@@ -310,14 +229,14 @@ void Deltaf_Data::construct_cubic_splines()
   betaV_spline = gsl_spline_alloc(gsl_interp_cspline, points_T);
 
   // Initialize the cubic splines
-  gsl_spline_init(c0_spline, T_array, c0_data[0], points_T);
-  gsl_spline_init(c2_spline, T_array, c2_data[0], points_T);
-  gsl_spline_init(c3_spline, T_array, c3_data[0], points_T);
-
-  gsl_spline_init(F_spline, T_array, F_data[0], points_T);
-  gsl_spline_init(betabulk_spline, T_array, betabulk_data[0], points_T);
-  gsl_spline_init(betaV_spline, T_array, betaV_data[0], points_T);
-  gsl_spline_init(betapi_spline, T_array, betapi_data[0], points_T);
+  //gsl_spline_init(c0_spline, T_array, c0_data[0], points_T);
+  //gsl_spline_init(c2_spline, T_array, c2_data[0], points_T);
+  //gsl_spline_init(c3_spline, T_array, c3_data[0], points_T);
+//
+  //gsl_spline_init(F_spline, T_array, F_data[0], points_T);
+  //gsl_spline_init(betabulk_spline, T_array, betabulk_data[0], points_T);
+  //gsl_spline_init(betaV_spline, T_array, betaV_data[0], points_T);
+  //gsl_spline_init(betapi_spline, T_array, betapi_data[0], points_T);
 
 }
 
@@ -381,6 +300,11 @@ deltaf_coefficients Deltaf_Data::cubic_spline(double T, double E, double P, doub
 
       break;
     }
+    case 8:
+    {
+      df.shear14_coeff = 2.0 * T * T * (E + P);
+      std::cout << "Using CCAKE  df correction" << std::endl;
+    }
     default:
     {
       printf("Error: choose df_mode = (1,2,3,4)\n");
@@ -394,36 +318,53 @@ deltaf_coefficients Deltaf_Data::cubic_spline(double T, double E, double P, doub
   return df;
 }
 
-double Deltaf_Data::calculate_bilinear(double ** f_data, double T, double muB, double TL, double TR, double muBL, double muBR, int iTL, int iTR, int imuBL, int imuBR)
+double Deltaf_Data::calculate_bilinear(std::vector<std::vector<double>>& f_data, double T, double muB, double TL, double TR, double muBL, double muBR, int iTL, int iTR, int imuBL, int imuBR)
 {
-  // bilinear formula f(T,muB)
-  //  f_LR    f_RR
-  //
-  //  f_LL    f_RL
+    // Bilinear interpolation for f(muB, T)
+    // Diagram of points:
+    //  f_LL    f_RL (T-axis: Left to Right)
+    //
+    //  f_LR    f_RR
+    // (muB-axis: Bottom to Top)
 
-  double f_LL = f_data[iTL][imuBL];
-  double f_LR = f_data[iTL][imuBR];
-  double f_RL = f_data[iTR][imuBL];
-  double f_RR = f_data[iTR][imuBR];
+    //std::cout << "f starting" << std::endl;
+    //std::cout << "iTL = " << iTL << ", iTR = " << iTR << ", imuBL = " << imuBL << ", imuBR = " << imuBR << std::endl;
+//
+    // Ensure indices are within bounds
+    if (iTL >= points_T || iTR >= points_T || imuBL >= points_muB || imuBR >= points_muB || iTL < 0 || iTR < 0 || imuBL < 0 || imuBR < 0) {
+        throw std::out_of_range("Index out of range in calculate_bilinear.");
+    }
 
-  return ((f_LL*(TR - T) + f_RL*(T - TL)) * (muBR - muB)  +  (f_LR*(TR - T) + f_RR*(T - TL)) * (muB - muBL)) / (dT * dmuB);
+    // Access the required points
+    double f_LL = f_data[imuBL][iTL]; // Bottom-left
+    double f_RL = f_data[imuBL][iTR]; // Bottom-right
+    double f_LR = f_data[imuBR][iTL]; // Top-left
+    double f_RR = f_data[imuBR][iTR]; // Top-right
+
+    // Perform bilinear interpolation
+    double result = ((f_LL * (TR - T) + f_RL * (T - TL)) * (muBR - muB) +
+                     (f_LR * (TR - T) + f_RR * (T - TL)) * (muB - muBL)) /
+                    (dT * dmuB);
+
+    return result;
 }
 
-deltaf_coefficients Deltaf_Data::bilinear_interpolation(double T, double muB, double E, double P, double bulkPi)
+
+deltaf_coefficients Deltaf_Data::bilinear_interpolation(double T, double muB, double E, double P, double bulkPi, int icell)
 {
   // left and right T, muB indices
   int iTL = (int)floor((T - T_min) / dT);
   int iTR = iTL + 1;
-
+  //std::cout << muB << " " << muB_min << " " << dmuB << std::endl;
   int imuBL = (int)floor((muB - muB_min) / dmuB);
+  //std::cout << muB << " " << muB_min << " " << dmuB << " " << imuBL << std::endl;
   int imuBR = imuBL + 1;
-
   double TL, TR, muBL, muBR;
 
   if(!(iTL >= 0 && iTR < points_T) || !(imuBL >= 0 && imuBR < points_muB))
   {
     printf("Error: (T,muB) outside df coefficient table. Exiting...\n");
-    exit(-1);
+    //exit(-1);
   }
   else
   {
@@ -434,7 +375,6 @@ deltaf_coefficients Deltaf_Data::bilinear_interpolation(double T, double muB, do
   }
 
   deltaf_coefficients df;
-
   switch(df_mode)
   {
     case 1:
@@ -473,6 +413,11 @@ deltaf_coefficients Deltaf_Data::bilinear_interpolation(double T, double muB, do
       printf("Bilinear interpolation error: Jonah df doesn't work for nonzero muB. Exiting..\n");
       exit(-1);
     }
+    case 8:
+    {
+      df.shear14_coeff = 2.0 * T * T * (E + P);
+      break;
+    }
     default:
     {
       printf("Bilinear interpolation error: choose df_mode = (1,2,3). Exiting..\n");
@@ -483,7 +428,7 @@ deltaf_coefficients Deltaf_Data::bilinear_interpolation(double T, double muB, do
   return df;
 }
 
-deltaf_coefficients Deltaf_Data::evaluate_df_coefficients(double T, double muB, double E, double P, double bulkPi)
+deltaf_coefficients Deltaf_Data::evaluate_df_coefficients(double T, double muB, double E, double P, double bulkPi, int icell)
 {
   // evaluate the df coefficients by interpolating the data
 
@@ -497,7 +442,12 @@ deltaf_coefficients Deltaf_Data::evaluate_df_coefficients(double T, double muB, 
   {
     // muB on freezeout surface should be nonzero in general
     // otherwise should set include_baryon = 0
-    df = bilinear_interpolation(T, muB, E, P, bulkPi);  // bilinear wrt (T, muB)
+    if(T== 0.187394)
+    {
+      std::cout << "T = " << T << ", muB = " << muB << ", E = " << E << ", P = " << P << ", bulkPi = " << bulkPi << std::endl;
+      int icell = 1;
+    } 
+    df = bilinear_interpolation(T, muB, E, P, bulkPi, icell);  // bilinear wrt (T, muB)
   }
 
   return df;
@@ -517,7 +467,7 @@ void Deltaf_Data::test_df_coefficients(double bulkPi_over_P)
   double muB = QGP.baryon_chemical_potential;
   double bulkPi = bulkPi_over_P * P;
 
-  deltaf_coefficients df = evaluate_df_coefficients(T, muB, E, P, bulkPi);
+  deltaf_coefficients df = evaluate_df_coefficients(T, muB, E, P, bulkPi, 0);
 
   if(df_mode == 1)
   {
@@ -544,10 +494,17 @@ void Deltaf_Data::compute_particle_densities(particle_info * particle_data, int 
   const double P = QGP.pressure;       // GeV / fm^3
   const double muB = QGP.baryon_chemical_potential;
   const double nB = QGP.net_baryon_density;
+  const double muS = QGP.strange_chemical_potential;
+  const double nS = QGP.net_strange_density;
+  const double muQ = QGP.charge_chemical_potential;
+  const double nQ = QGP.net_charge_density;
+  
 
-  deltaf_coefficients df = evaluate_df_coefficients(T, muB, E, P, 0.0);
+  deltaf_coefficients df = evaluate_df_coefficients(T, muB, E, P, 0.0, 0);
 
   double alphaB = muB / T;
+  double alphaQ = muQ / T;
+  double alphaS = muS / T;
   double baryon_enthalpy_ratio = nB / (E + P);
 
   // gauss laguerre roots and weights
@@ -572,12 +529,15 @@ void Deltaf_Data::compute_particle_densities(particle_info * particle_data, int 
     double mass = particle_data[i].mass;
     double degeneracy = (double)particle_data[i].gspin;
     double baryon = (double)particle_data[i].baryon;
+    double charge = (double)particle_data[i].charge;
+    double strange = (double)particle_data[i].strange;
     double sign = (double)particle_data[i].sign;
     double mbar = mass / T;
 
     // equilibrium density
     double neq_fact = degeneracy * pow(T,3) / two_pi2_hbarC3;
-    double neq = neq_fact * GaussThermal(neq_int, pbar_root1, pbar_weight1, pbar_pts, mbar, alphaB, baryon, sign);
+    double neq = neq_fact * GaussThermal(neq_int, pbar_root1, pbar_weight1, pbar_pts, mbar, alphaB, baryon,
+                                         alphaQ, charge, alphaS, strange, sign);
 
     // bulk and diffusion density corrections
     double dn_bulk = 0.0;
@@ -598,10 +558,14 @@ void Deltaf_Data::compute_particle_densities(particle_info * particle_data, int 
         double J30_fact = degeneracy * pow(T,5) / two_pi2_hbarC3;
         double J31_fact = degeneracy * pow(T,5) / two_pi2_hbarC3 / 3.0;
 
-        double J10 =  J10_fact * GaussThermal(J10_int, pbar_root1, pbar_weight1, pbar_pts, mbar, alphaB, baryon, sign);
-        double J20 = J20_fact * GaussThermal(J20_int, pbar_root2, pbar_weight2, pbar_pts, mbar, alphaB, baryon, sign);
-        double J30 = J30_fact * GaussThermal(J30_int, pbar_root3, pbar_weight3, pbar_pts, mbar, alphaB, baryon, sign);
-        double J31 = J31_fact * GaussThermal(J31_int, pbar_root3, pbar_weight3, pbar_pts, mbar, alphaB, baryon, sign);
+        double J10 =  J10_fact *GaussThermal(J10_int, pbar_root1, pbar_weight1, pbar_pts, mbar, alphaB, baryon,
+                                         alphaQ, charge, alphaS, strange, sign);
+        double J20 = J20_fact * GaussThermal(J20_int, pbar_root2, pbar_weight2, pbar_pts, mbar, alphaB, baryon,
+                                         alphaQ, charge, alphaS, strange, sign);
+        double J30 = J30_fact * GaussThermal(J30_int, pbar_root3, pbar_weight3, pbar_pts, mbar, alphaB, baryon,
+                                         alphaQ, charge, alphaS, strange, sign);
+        double J31 = J31_fact * GaussThermal(J31_int, pbar_root3, pbar_weight3, pbar_pts, mbar, alphaB, baryon,
+                                         alphaQ, charge, alphaS, strange, sign);
 
         dn_bulk = ((c0 - c2) * mass * mass * J10 +  c1 * baryon * J20  +  (4.0 * c2 - c0) * J30);
         // these coefficients need to be loaded.
@@ -622,9 +586,12 @@ void Deltaf_Data::compute_particle_densities(particle_info * particle_data, int 
         double J11_fact = degeneracy * pow(T,3) / two_pi2_hbarC3 / 3.0;
         double J20_fact = degeneracy * pow(T,4) / two_pi2_hbarC3;
 
-        double J10 = J10_fact * GaussThermal(J10_int, pbar_root1, pbar_weight1, pbar_pts, mbar, alphaB, baryon, sign);
-        double J11 = J11_fact * GaussThermal(J11_int, pbar_root1, pbar_weight1, pbar_pts, mbar, alphaB, baryon, sign);
-        double J20 = J20_fact * GaussThermal(J20_int, pbar_root2, pbar_weight2, pbar_pts, mbar, alphaB, baryon, sign);
+        double J10 = J10_fact * GaussThermal(J10_int, pbar_root1, pbar_weight1, pbar_pts, mbar, alphaB, baryon,
+                                         alphaQ, charge, alphaS, strange, sign);
+        double J11 = J11_fact * GaussThermal(J11_int, pbar_root1, pbar_weight1, pbar_pts, mbar, alphaB, baryon,
+                                         alphaQ, charge, alphaS, strange, sign);
+        double J20 = J20_fact * GaussThermal(J20_int, pbar_root2, pbar_weight2, pbar_pts, mbar, alphaB, baryon,
+                                         alphaQ, charge, alphaS, strange, sign);
 
         dn_bulk = (neq + (baryon * J10 * G) + (J20 * F / pow(T,2))) / betabulk;
         dn_diff = (neq * T * baryon_enthalpy_ratio  -  baryon * J11) / betaV;
@@ -634,6 +601,10 @@ void Deltaf_Data::compute_particle_densities(particle_info * particle_data, int 
       case 4:
       {
         // bulk/diffusion densities not needed for jonah
+        break;
+      }
+      case 8:
+      {
         break;
       }
       default:

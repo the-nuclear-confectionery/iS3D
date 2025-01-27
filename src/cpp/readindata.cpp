@@ -121,14 +121,34 @@ FO_data_reader::~FO_data_reader()
 
 int FO_data_reader::get_number_cells()
 {
-  int number_of_cells = 0;
-  //add more options for types of FO file
-  ostringstream surface_file;
-  surface_file << pathToInput << "/surface.dat";
-  Table block_file(surface_file.str().c_str());
-  number_of_cells = block_file.getNumberOfRows();
-  return(number_of_cells);
+    int number_of_cells = 0;
+    std::ostringstream surface_file;
+    surface_file << pathToInput << "/surface.dat";
+
+    // Open the file
+    std::ifstream block_file(surface_file.str().c_str());
+    if (!block_file.is_open())
+    {
+        std::cerr << "Error: Could not open file " << surface_file.str() << std::endl;
+        return 0; // Return 0 if the file can't be opened
+    }
+
+    std::string line;
+    while (std::getline(block_file, line))
+    {
+        // Trim any leading or trailing whitespace (if necessary)
+        std::istringstream iss(line);
+        std::string dummy;
+        if (iss >> dummy) // Check if the line contains at least one non-whitespace character
+        {
+            ++number_of_cells; // Count the line as valid
+        }
+    }
+
+    block_file.close();
+    return number_of_cells;
 }
+
 
 void FO_data_reader::read_surf_switch(long length, FO_surf* surf_ptr)
 {
@@ -140,6 +160,15 @@ void FO_data_reader::read_surf_switch(long length, FO_surf* surf_ptr)
   else if (mode == 5) read_surf_VH_Vorticity(length, surf_ptr); //GPU-VH surface file containing viscous hydro dissipative currents and thermal vorticity tensor
   else if (mode == 6) read_surf_VH_MUSIC_New(length, surf_ptr); //boost invariant surface from new (public) version of MUSIC
   else if (mode == 7) read_surf_VH_hiceventgen(length, surf_ptr); //boost invariant surface produced by the hydro module in https://github.com/Duke-QCD/hic-eventgen
+  else if (mode == 8) read_surf_CCAKE_boost_invariant(length, surf_ptr); //boost invariant surface produced by the hydro module CCake
+  else if (mode == 9) read_surf_CCAKE_3D(length, surf_ptr); //3+1D surface produced by the hydro module CCake
+  else if (mode == 10) read_surf_CCAKE_v1_boost_invariant(length, surf_ptr); //boost invariant surface produced by the hydro module CCake v1
+  else
+  {
+    cout << "Error: mode " << mode << " not supported" << endl;
+    exit(-1);
+  }
+  
   return;
 }
 
@@ -1195,8 +1224,505 @@ void FO_data_reader::read_surf_VH_hiceventgen(long length, FO_surf* surf_ptr)
   return;
 }
 
+// ccake 2.0 3+1d format
+void FO_data_reader::read_surf_CCAKE_3D(long length, FO_surf* surf_ptr)
+{
+  cout << "Reading in freezeout surface in CCAKE 3+1D format" << endl;
+  ostringstream surfdat_stream;
+  double dummy;
+  surfdat_stream << pathToInput << "/surface.dat";
+  ifstream surfdat(surfdat_stream.str().c_str());
+
+  // average thermodynamic quantities on surface
+  double Tavg = 0.0;
+  double Eavg = 0.0;
+  double Pavg = 0.0;
+  double muBavg = 0.0;
+  double nBavg = 0.0;
+  double total_surface_volume = 0.0;
+
+  double temp_day = 0.0;
+  double temp_dax = 0.0;
+  double temp_dan = 0.0;
+  double temp_dat = 0.0;
+  double gamma = 0.0;
+  double ux = 0.0;
+  double uy = 0.0;
+  double un = 0.0;
+  for (long i = 0; i < length; i++)
+  {
+    surfdat >> temp_dat;
+    surfdat >> temp_dax;
+    surfdat >> temp_day;
+    surfdat >> temp_dan;
+    
+    surfdat >> dummy;
+    surf_ptr[i].ut = dummy;
+    gamma = dummy;
+    surfdat >> dummy;
+    surf_ptr[i].ux = dummy;
+    ux = dummy;
+    surfdat >> dummy;
+    surf_ptr[i].uy = dummy;
+    uy = dummy;
+    surfdat >> dummy;
+    surf_ptr[i].un = dummy;
+    un = dummy;
 
 
+    //normalization m_sph/sigma_sph
+    surfdat >> dummy;
+
+    temp_dat = temp_dat * dummy;
+    temp_dax = temp_dax * dummy;
+    temp_day = temp_day * dummy;
+    temp_dan = temp_dan * dummy;
+
+    surf_ptr[i].dat = temp_dat;
+    surf_ptr[i].dax = temp_dax;
+    surf_ptr[i].day = temp_day;
+    surf_ptr[i].dan = temp_dan;
+
+    surfdat >> dummy;
+    surf_ptr[i].bulkPi = dummy * hbarC;
+
+    // ten contravariant components of shear stress tensor
+    surfdat >> dummy;
+    surf_ptr[i].pitt = dummy * hbarC;
+    surfdat >> dummy;
+    surf_ptr[i].pixx = dummy * hbarC;
+    surfdat >> dummy;
+    surf_ptr[i].piyy = dummy * hbarC;
+    surfdat >> dummy;
+    surf_ptr[i].pinn = dummy * hbarC;
+    surfdat >> dummy;
+    surf_ptr[i].pixy = dummy * hbarC;
+    surfdat >> dummy;
+    surf_ptr[i].pixn = dummy * hbarC;
+    surfdat >> dummy;
+    surf_ptr[i].piyn = dummy * hbarC;
+
+
+
+
+
+    // contravariant spacetime position
+    surfdat >> surf_ptr[i].tau;
+    double t = surf_ptr[i].tau;
+    surfdat >> surf_ptr[i].x;
+    surfdat >> surf_ptr[i].y;
+    surfdat >> surf_ptr[i].eta;
+
+
+
+    surf_ptr[i].pitx = (ux * surf_ptr[i].pixx + uy * surf_ptr[i].pixy + un * surf_ptr[i].pixn * t * t) / gamma;
+    surf_ptr[i].pity = (ux * surf_ptr[i].pixy + uy * surf_ptr[i].piyy + un * surf_ptr[i].piyn * t * t) / gamma;
+    surf_ptr[i].pitn = (ux * surf_ptr[i].pixn + uy * surf_ptr[i].piyn + un * surf_ptr[i].pinn * t * t) / gamma;
+
+    // thermodynamic quantities at freeze out
+    surfdat >> dummy;                           // entropy density (
+    double s = dummy;
+
+    surfdat >> dummy;
+    double E = dummy * hbarC;
+    surf_ptr[i].E = E;                          // energy density
+    surfdat >> dummy;
+    double T = dummy ;
+    surf_ptr[i].T = T;                          // temperature
+    if (include_baryon)
+    {
+      surfdat >> dummy;
+      double muB = dummy * hbarC;              // baryon chemical potential
+      surf_ptr[i].muB = muB;
+    }
+    else
+    {
+      surf_ptr[i].muB = 0.0;
+    }
+    surfdat >> dummy;                           // strangeness chemical potential
+    double muS = dummy * hbarC;              // strangeness chemical potential
+    surf_ptr[i].muS = muS;
+    surfdat >> dummy;                           // electric charge chemical potential
+    surf_ptr[i].muQ = dummy * hbarC;              // electric charge chemical potential
+    surfdat >> dummy;                           // enthalpy density w = e + P             
+    double P = dummy * hbarC - E;
+    surf_ptr[i].P = P; // p = w - e
+    surfdat >> dummy;                           // cs2
+
+    double nB = 0.0;
+
+    // getting average thermodynamic quantities
+    double tau = surf_ptr[i].tau;
+    ux = surf_ptr[i].ux;
+    uy = surf_ptr[i].uy;
+    un = surf_ptr[i].un;
+    double ut = sqrt(1.0 + ux * ux + uy * uy + tau * tau * un * un);  // enforce normalization
+    double dat = surf_ptr[i].dat;
+    double dax = surf_ptr[i].dax;
+    double day = surf_ptr[i].day;
+    double dan = surf_ptr[i].dan;
+    double muB = surf_ptr[i].muB;
+
+    double udsigma = ut * dat + ux * dax + uy * day + un * dan;
+    double dsigma_dsigma = dat * dat - dax * dax - day * day - dan * dan / (tau * tau);
+    double dsigma_magnitude = fabs(udsigma) + sqrt(fabs(udsigma * udsigma - dsigma_dsigma));
+
+    total_surface_volume += dsigma_magnitude;
+
+    Eavg += (E * dsigma_magnitude);
+    Tavg += (T * dsigma_magnitude);
+    Pavg += (P * dsigma_magnitude);
+    muBavg += (muB * dsigma_magnitude);
+    nBavg += (nB * dsigma_magnitude);
+  }
+  surfdat.close();
+
+  Tavg /= total_surface_volume;
+  Eavg /= total_surface_volume;
+  Pavg /= total_surface_volume;
+  muBavg /= total_surface_volume;
+  nBavg /= total_surface_volume;
+
+  // write averaged thermodynamic quantities to file
+  ofstream thermal_average("average_thermodynamic_quantities.dat", ios_base::out);
+  thermal_average << setprecision(15) << Tavg << "\n" << Eavg << "\n" << Pavg << "\n" << muBavg << "\n" << nBavg;
+  thermal_average.close();
+
+  return;
+}
+
+//CCAKE v2.0 boost invariant format
+void FO_data_reader::read_surf_CCAKE_boost_invariant(long length, FO_surf* surf_ptr)
+{
+  cout << "Reading in freezeout surface in CCAKE boost invariant format" << endl;
+  ostringstream surfdat_stream;
+  double dummy;
+  std::string dummy_string;
+  surfdat_stream << pathToInput << "/surface.dat";
+  ifstream surfdat(surfdat_stream.str().c_str());
+
+  // average thermodynamic quantities on surface
+  double Tavg = 0.0;
+  double Eavg = 0.0;
+  double Pavg = 0.0;
+  double muBavg = 0.0;
+  double nBavg = 0.0;
+  double total_surface_volume = 0.0;
+
+  double temp_day = 0.0;
+  double temp_dax = 0.0;
+  double temp_dat = 0.0;
+  double gamma = 0.0;
+  double ux = 0.0;
+  double uy = 0.0;
+  for (long i = 0; i < length; i++)
+  {
+    surfdat >> temp_dat;
+    surfdat >> temp_dax;
+    surfdat >> temp_day;
+    
+    surfdat >> dummy;
+    surf_ptr[i].ut = dummy;
+    gamma = dummy;
+    surfdat >> dummy;
+    surf_ptr[i].ux = dummy;
+    ux = dummy;
+    surfdat >> dummy;
+    surf_ptr[i].uy = dummy;
+    uy = dummy;
+    surf_ptr[i].un = 0.0;
+
+    //normalization m_sph/sigma_sph
+    surfdat >> dummy;
+    double udn = (gamma * temp_dat + ux * temp_dax + uy * temp_day);
+
+    temp_dat = temp_dat * dummy/udn;
+    temp_dax = temp_dax * dummy/udn;
+    temp_day = temp_day * dummy/udn;
+    surf_ptr[i].dat = temp_dat;
+    surf_ptr[i].dax = temp_dax;
+    surf_ptr[i].day = temp_day;
+    surf_ptr[i].dan = 0.0;
+
+    surfdat >> dummy;
+    surf_ptr[i].bulkPi = 0.0;
+
+    // ten contravariant components of shear stress tensor
+    surfdat >> dummy;
+    surf_ptr[i].pitt = dummy * hbarC;
+    surfdat >> dummy;
+    surf_ptr[i].pixx = dummy * hbarC;
+    surfdat >> dummy;
+    surf_ptr[i].piyy = dummy * hbarC;
+    surfdat >> dummy;
+    surf_ptr[i].pinn = dummy * hbarC;
+    surfdat >> dummy;
+    surf_ptr[i].pixy = dummy * hbarC;
+
+
+    surf_ptr[i].pixn = 0.0;
+    surf_ptr[i].piyn = 0.0;
+    surf_ptr[i].pitx = (ux * surf_ptr[i].pixx + uy * surf_ptr[i].pixy) / gamma;
+    surf_ptr[i].pity = (ux * surf_ptr[i].pixy + uy * surf_ptr[i].piyy) / gamma;
+    surf_ptr[i].pitn = 0.0;
+
+
+
+
+    // contravariant spacetime position
+    surfdat >> surf_ptr[i].tau;
+    surfdat >> surf_ptr[i].x;
+    surfdat >> surf_ptr[i].y;
+    surf_ptr[i].eta = 0.0;
+
+
+
+
+    // thermodynamic quantities at freeze out
+    surfdat >> dummy;                           // entropy density (
+    double s = dummy;
+
+    surfdat >> dummy;
+    double E = dummy * hbarC;
+    surf_ptr[i].E = E;                          // energy density
+    surfdat >> dummy;
+    double T = dummy ;
+    surf_ptr[i].T = T;                          // temperature
+    if (include_baryon)
+    {
+      surfdat >> dummy;
+      double muB = dummy ;              // baryon chemical potential
+      surf_ptr[i].muB = muB * hbarC;
+      surf_ptr[i].Vt = 0.0;
+      surf_ptr[i].Vx = 0.0;
+      surf_ptr[i].Vy = 0.0;
+      surf_ptr[i].Vn = 0.0;
+    }
+    else
+    {
+      surfdat >> dummy;
+      surf_ptr[i].muB = 0.0;
+    }
+
+    surfdat >> dummy;                           // strangeness chemical potential
+    double muS = dummy*hbarC;              // strangeness chemical potential
+    surf_ptr[i].muS = muS;
+    surfdat >> dummy;                           // electric charge chemical potential
+    double muQ = dummy * hbarC;              // electric charge chemical potential
+    surf_ptr[i].muQ = muQ;
+    surfdat >> dummy;                           // enthalpy density w = e + P             
+    double P = dummy * hbarC - E;
+    surf_ptr[i].P = P; // p = w - e
+    surfdat >> dummy;                           // cs2
+
+    double nB = 0.0;
+
+    // getting average thermodynamic quantities
+    double tau = surf_ptr[i].tau;
+    ux = surf_ptr[i].ux;
+    uy = surf_ptr[i].uy;
+    double un = surf_ptr[i].un;
+    double ut = sqrt(1.0 + ux * ux + uy * uy + tau * tau * un * un);  // enforce normalization
+    double dat = surf_ptr[i].dat;
+    double dax = surf_ptr[i].dax;
+    double day = surf_ptr[i].day;
+    double dan = surf_ptr[i].dan;
+    double muB = surf_ptr[i].muB;
+
+    double udsigma = ut * dat + ux * dax + uy * day + un * dan;
+    double dsigma_dsigma = dat * dat - dax * dax - day * day - dan * dan / (tau * tau);
+    double dsigma_magnitude = fabs(udsigma) + sqrt(fabs(udsigma * udsigma - dsigma_dsigma));
+
+    total_surface_volume += dsigma_magnitude;
+
+    Eavg += (E * dsigma_magnitude);
+    Tavg += (T * dsigma_magnitude);
+    Pavg += (P * dsigma_magnitude);
+    muBavg += (muB * dsigma_magnitude);
+    nBavg += (nB * dsigma_magnitude);
+  }
+  surfdat.close();
+
+  Tavg /= total_surface_volume;
+  Eavg /= total_surface_volume;
+  Pavg /= total_surface_volume;
+  muBavg /= total_surface_volume;
+  nBavg /= total_surface_volume;
+  std::cout << "finished reading surface" << std::endl;
+  // write averaged thermodynamic quantities to file
+  ofstream thermal_average("average_thermodynamic_quantities.dat", ios_base::out);
+  thermal_average << setprecision(15) << Tavg << "\n" << Eavg << "\n" << Pavg << "\n" << muBavg << "\n" << nBavg;
+  thermal_average.close();
+
+  return;
+}
+
+//old CCAKE boost invariant format
+void FO_data_reader::read_surf_CCAKE_v1_boost_invariant(long length, FO_surf* surf_ptr)
+{
+  cout << "Reading in freezeout surface in CCAKE v1.0 boost invariant format" << endl;
+  ostringstream surfdat_stream;
+  double dummy;
+  std::string dummy_string;
+  surfdat_stream << pathToInput << "/surface.dat";
+  ifstream surfdat(surfdat_stream.str().c_str());
+
+  // average thermodynamic quantities on surface
+  double Tavg = 0.0;
+  double Eavg = 0.0;
+  double Pavg = 0.0;
+  double muBavg = 0.0;
+  double nBavg = 0.0;
+  double total_surface_volume = 0.0;
+
+  double temp_day = 0.0;
+  double temp_dax = 0.0;
+  double temp_dat = 0.0;
+  double gamma = 0.0;
+  double ux = 0.0;
+  double uy = 0.0;
+  for (long i = 0; i < length; i++)
+  {
+    surfdat >> temp_dat;
+    surfdat >> temp_dax;
+    surfdat >> temp_day;
+    
+    surfdat >> dummy;
+    surf_ptr[i].ut = dummy;
+    gamma = dummy;
+    surfdat >> dummy;
+    surf_ptr[i].ux = dummy;
+    ux = dummy;
+    surfdat >> dummy;
+    surf_ptr[i].uy = dummy;
+    uy = dummy;
+    surf_ptr[i].un = 0.0;
+
+    //normalization m_sph/sigma_sph
+    surfdat >> dummy;
+    double udn = (gamma * temp_dat + ux * temp_dax + uy * temp_day);
+
+    temp_dat = temp_dat * dummy/udn;
+    temp_dax = temp_dax * dummy/udn;
+    temp_day = temp_day * dummy/udn;
+    surf_ptr[i].dat = temp_dat;
+    surf_ptr[i].dax = temp_dax;
+    surf_ptr[i].day = temp_day;
+    surf_ptr[i].dan = 0.0;
+
+    surfdat >> dummy;
+    surf_ptr[i].bulkPi = 0.0;
+
+    // ten contravariant components of shear stress tensor
+    surfdat >> dummy;
+    surf_ptr[i].pitt = dummy * hbarC;
+    surfdat >> dummy;
+    surf_ptr[i].pixx = dummy * hbarC;
+    surfdat >> dummy;
+    surf_ptr[i].piyy = dummy * hbarC;
+    surfdat >> dummy;
+    surf_ptr[i].pinn = dummy * hbarC;
+    surfdat >> dummy;
+    surf_ptr[i].pixy = dummy * hbarC;
+
+
+    surf_ptr[i].pixn = 0.0;
+    surf_ptr[i].piyn = 0.0;
+    surf_ptr[i].pitx = (ux * surf_ptr[i].pixx + uy * surf_ptr[i].pixy) / gamma;
+    surf_ptr[i].pity = (ux * surf_ptr[i].pixy + uy * surf_ptr[i].piyy) / gamma;
+    surf_ptr[i].pitn = 0.0;
+
+
+
+
+    // contravariant spacetime position
+    surfdat >> surf_ptr[i].tau;
+    surfdat >> surf_ptr[i].x;
+    surfdat >> surf_ptr[i].y;
+    surf_ptr[i].eta = 0.0;
+
+
+
+
+    // thermodynamic quantities at freeze out
+    surfdat >> dummy;                           // entropy density (
+    double s = dummy;
+
+    surfdat >> dummy;
+    double E = dummy * hbarC;
+    surf_ptr[i].E = E;                          // energy density
+    surfdat >> dummy;
+    double T = dummy ;
+    surf_ptr[i].T = T;                          // temperature
+    if (include_baryon)
+    {
+      surfdat >> dummy;
+      double muB = dummy ;              // baryon chemical potential
+      surf_ptr[i].muB = muB * hbarC;
+      surf_ptr[i].Vt = 0.0;
+      surf_ptr[i].Vx = 0.0;
+      surf_ptr[i].Vy = 0.0;
+      surf_ptr[i].Vn = 0.0;
+    }
+    else
+    {
+      surfdat >> dummy;
+      surf_ptr[i].muB = 0.0;
+    }
+
+    surfdat >> dummy;                           // strangeness chemical potential
+    double muS = dummy*hbarC;              // strangeness chemical potential
+    surf_ptr[i].muS = muS;
+    surfdat >> dummy;                           // electric charge chemical potential
+    double muQ = dummy * hbarC;              // electric charge chemical potential
+    surf_ptr[i].muQ = muQ;
+    surfdat >> dummy_string;                    // eos name
+    surfdat >> dummy;                           // enthalpy density w = e + P             
+    double P = dummy * hbarC - E;
+    surf_ptr[i].P = P; // p = w - e
+    surfdat >> dummy;                           // cs2
+
+    double nB = 0.0;
+
+    // getting average thermodynamic quantities
+    double tau = surf_ptr[i].tau;
+    ux = surf_ptr[i].ux;
+    uy = surf_ptr[i].uy;
+    double un = surf_ptr[i].un;
+    double ut = sqrt(1.0 + ux * ux + uy * uy + tau * tau * un * un);  // enforce normalization
+    double dat = surf_ptr[i].dat;
+    double dax = surf_ptr[i].dax;
+    double day = surf_ptr[i].day;
+    double dan = surf_ptr[i].dan;
+    double muB = surf_ptr[i].muB;
+
+    double udsigma = ut * dat + ux * dax + uy * day + un * dan;
+    double dsigma_dsigma = dat * dat - dax * dax - day * day - dan * dan / (tau * tau);
+    double dsigma_magnitude = fabs(udsigma) + sqrt(fabs(udsigma * udsigma - dsigma_dsigma));
+
+    total_surface_volume += dsigma_magnitude;
+
+    Eavg += (E * dsigma_magnitude);
+    Tavg += (T * dsigma_magnitude);
+    Pavg += (P * dsigma_magnitude);
+    muBavg += (muB * dsigma_magnitude);
+    nBavg += (nB * dsigma_magnitude);
+  }
+  surfdat.close();
+
+  Tavg /= total_surface_volume;
+  Eavg /= total_surface_volume;
+  Pavg /= total_surface_volume;
+  muBavg /= total_surface_volume;
+  nBavg /= total_surface_volume;
+  std::cout << "finished reading surface" << std::endl;
+  // write averaged thermodynamic quantities to file
+  ofstream thermal_average("average_thermodynamic_quantities.dat", ios_base::out);
+  thermal_average << setprecision(15) << Tavg << "\n" << Eavg << "\n" << Pavg << "\n" << muBavg << "\n" << nBavg;
+  thermal_average.close();
+
+  return;
+}
 
 read_mcid::read_mcid(long int mcid_in)
 {
@@ -1460,7 +1986,8 @@ int PDG_Data::read_resonances_conventional(particle_info * particle, string pdg_
     resofile >> particle[local_i].gisospin;     //isospin degeneracy
     resofile >> particle[local_i].charge;
     resofile >> particle[local_i].decays;
-
+    //print all information 
+    //std::cout  << "particle_id = " << particle[local_i].mc_id << " ; name = " << particle[local_i].name << " ; mass = " << particle[local_i].mass << " ; width = " << particle[local_i].width << " ; gspin = " << particle[local_i].gspin << " ; baryon = " << particle[local_i].baryon << " ; strange = " << particle[local_i].strange << " ; charm = " << particle[local_i].charm << " ; bottom = " << particle[local_i].bottom << " ; gisospin = " << particle[local_i].gisospin << " ; charge = " << particle[local_i].charge << " ; decays = " << particle[local_i].decays << std::endl;
     if (particle[local_i].decays > Maxdecaychannel)
       {
 	cout << "Error : particle[local_i].decays = "<< particle[local_i].decays << "; local_i = " << local_i << endl;

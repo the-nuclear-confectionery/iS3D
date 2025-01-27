@@ -225,6 +225,13 @@ double estimate_mean_particle_number(double equilibrium_density, double bulk_den
 
       break;
     }
+    case 8: //CCAKE
+    {
+
+      //particle_number = ds_time * (equilibrium_density  +  bulkPi * bulk_density)  -  ds_space * Vdsigma * diffusion_density;
+      particle_number = ds_time * equilibrium_density;
+      break;
+    }
     default:
     {
       printf("\nEstimate particle yield error: please set df_mode = (1,2,3,4)\n");
@@ -243,6 +250,7 @@ double fast_max_particle_number(double equilibrium_density, double bulk_density,
   switch(df_mode)
   {
     case 1: // 14 moment
+    case 8:
     case 2: // Chapman Enskog
     {
       linear_df:
@@ -279,13 +287,15 @@ double fast_max_particle_number(double equilibrium_density, double bulk_density,
 }
 
 
-double max_particle_number(double mbar, double degeneracy, double sign, double baryon, double T, double alphaB, double bulkPi, deltaf_coefficients df, bool feqmod_breaks_down, Gauss_Laguerre * laguerre, int df_mode, int include_baryon, double neq_fact, double J20_fact)
-{
+double max_particle_number(double mbar, double degeneracy, double sign, double baryon, double T, double alphaB, double bulkPi, deltaf_coefficients df, bool feqmod_breaks_down, Gauss_Laguerre * laguerre, int df_mode, int include_baryon, double neq_fact, double J20_fact,
+                           double alphaQ, double charge, double alphaS, double strange)
+  {
   double particle_density = 0.0;
 
   switch(df_mode)
   {
     case 1: // 14 moment
+    case 8:
     case 2: // Chapman Enskog
     {
       linear_df:
@@ -293,8 +303,8 @@ double max_particle_number(double mbar, double degeneracy, double sign, double b
       const int laguerre_pts = laguerre->points;
       double * pbar_root1 = laguerre->root[1];
       double * pbar_weight1 = laguerre->weight[1];
-
-      double equilibrium_density = neq_fact * degeneracy * GaussThermal(neq_int, pbar_root1, pbar_weight1, laguerre_pts, mbar, alphaB, baryon, sign);
+      double equilibrium_density = neq_fact * degeneracy * GaussThermal(neq_int, pbar_root1, pbar_weight1, laguerre_pts, mbar, alphaB, baryon,
+                                         alphaQ, charge, alphaS, strange, sign);
 
       particle_density = 2.0 * equilibrium_density;
 
@@ -315,13 +325,16 @@ double max_particle_number(double mbar, double degeneracy, double sign, double b
       double * pbar_weight1 = laguerre->weight[1];
       double * pbar_weight2 = laguerre->weight[2];
 
-      double equilibrium_density = neq_fact * degeneracy * GaussThermal(neq_int, pbar_root1, pbar_weight1, laguerre_pts, mbar, alphaB, baryon, sign);
+      double equilibrium_density = neq_fact * degeneracy * GaussThermal(neq_int, pbar_root1, pbar_weight1, laguerre_pts, mbar, alphaB, baryon,
+                                         alphaQ, charge, alphaS, strange, sign);
       double J10 = 0.0;
       if(include_baryon)
       {
-        J10 = neq_fact * degeneracy * GaussThermal(J10_int, pbar_root1, pbar_weight1, laguerre_pts, mbar, alphaB, baryon, sign);
+        J10 = neq_fact * degeneracy * GaussThermal(J10_int, pbar_root1, pbar_weight1, laguerre_pts, mbar, alphaB, baryon,
+                                         alphaQ, charge, alphaS, strange, sign);
       }
-      double J20 = J20_fact * degeneracy * GaussThermal(J20_int, pbar_root2, pbar_weight2, laguerre_pts, mbar, alphaB, baryon, sign);
+      double J20 = J20_fact * degeneracy * GaussThermal(J20_int, pbar_root2, pbar_weight2, laguerre_pts, mbar, alphaB, baryon,
+                                         alphaQ, charge, alphaS, strange, sign);
       double bulk_density = (equilibrium_density + (baryon * J10 * G) + (J20 * F / T / T)) / betabulk;
 
       particle_density = equilibrium_density  +  bulkPi * bulk_density;
@@ -338,7 +351,7 @@ double max_particle_number(double mbar, double degeneracy, double sign, double b
       double * pbar_root1 = laguerre->root[1];
       double * pbar_weight1 = laguerre->weight[1];
 
-      double equilibrium_density = neq_fact * degeneracy * GaussThermal(neq_int, pbar_root1, pbar_weight1, laguerre_pts, mbar, 0.0, 0.0, sign);
+      double equilibrium_density = neq_fact * degeneracy * GaussThermal(neq_int, pbar_root1, pbar_weight1, laguerre_pts, mbar, 0.0, 0.0,0.0,0.0,0.0,0.0, sign);
 
       particle_density = z * equilibrium_density;
 
@@ -351,7 +364,7 @@ double max_particle_number(double mbar, double degeneracy, double sign, double b
     }
   } // df_mode
 
-  //if(particle_density < 0.0) printf("Error: particle number is negative\n");
+  if(particle_density < 0.0) printf("Error: particle number is negative\n");
 
   return particle_density;
 }
@@ -391,6 +404,14 @@ double compute_df_weight(LRF_Momentum pLRF, double mass_squared, double sign, do
     case 1: // 14 moment
     {
       double chem = baryon * alphaB;
+      if(sign == -1.0) {
+        if(chem >= E/T) {
+          std::cout << "Warning: baryon * alphaB > E/T in compute_df_weight, setting feq to zero" << std::endl;
+          df_tot = 0.0;
+          break;
+
+        }
+      }
       double feqbar = 1.0 - sign / (exp(E/T - chem) + sign);
 
       double c0 = df.c0;
@@ -440,6 +461,22 @@ double compute_df_weight(LRF_Momentum pLRF, double mass_squared, double sign, do
       df_tot = df_shear + df_bulk;
       break;
     }
+    case 8: //CCAKE
+    {
+      double chem = baryon * alphaB;
+      if(sign == -1.0) {
+        if(chem >= E/T) {
+          std::cout << "Warning: baryon * alphaB > E/T in compute_df_weight, setting df to zero" << std::endl;
+          df_tot = 0.0;
+          break;
+
+        }
+      }
+      double feqbar = 1.0 - sign / (exp(E/T - chem) + sign);
+      double shear14_coeff = df.shear14_coeff;
+      df_tot = feqbar * pimunu_pmu_pnu / (shear14_coeff);
+      break;
+    }
     default:
     {
       printf("Error: use df_mode = (1,2,3,4)\n");
@@ -460,14 +497,14 @@ LRF_Momentum sample_momentum(default_random_engine& generator, long * acceptance
   double mbar = mass / T;
   double mbar_squared = mbar * mbar;
   double chem = baryon * alphaB;
-
+  //std::cout << "mbar = " << mbar << ", mbar_squared = " << mbar_squared << ", chem = " << chem << std::endl;
   // currently the momentum sampler does not work for photons and bosons with nonzero chemical potential
   // so non-equilibrium or electric / strange charge chemical potentials are not considered
-  if(sign == -1.0 && chem != 0.0)
-  {
-    printf("Error: bosons have chemical potential. Exiting...\n");
-    exit(-1);
-  }
+  //std::cout << "mbar = " << mbar << ", mbar_squared = " << mbar_squared << ", chem = " << chem << std::endl;
+    if (sign == -1.0 && chem != 0.0) {
+        std::cout << "Skipping sampling for boson with nonzero chemical potential" << std::endl;
+        return {}; // Return a default-constructed LRF_Momentum object
+    }
 
   bool rejected = true;
 
@@ -476,7 +513,8 @@ LRF_Momentum sample_momentum(default_random_engine& generator, long * acceptance
   if(mass == 0.0)
   {
     printf("Error: cannot sample photons with this method. Exiting...\n");
-    exit(-1);
+    //exit(-1);
+    return {};
   }
   else if(mbar < 1.008)
   {
@@ -650,7 +688,8 @@ LRF_Momentum rescale_momentum(LRF_Momentum pLRF_mod, double mass_squared, double
 }
 
 
-double EmissionFunctionArray::calculate_total_yield(double * Equilibrium_Density, double * Bulk_Density, double * Diffusion_Density, double *T_fo, double *P_fo, double *E_fo, double *tau_fo, double *ux_fo, double *uy_fo, double *un_fo, double *dat_fo, double *dax_fo, double *day_fo, double *dan_fo, double *pixx_fo, double *pixy_fo, double *pixn_fo, double *piyy_fo, double *piyn_fo, double *bulkPi_fo, double *muB_fo, double *nB_fo, double *Vx_fo, double *Vy_fo, double *Vn_fo, Deltaf_Data * df_data, Gauss_Laguerre * laguerre)
+double EmissionFunctionArray::calculate_total_yield(double * Equilibrium_Density, double * Bulk_Density, double * Diffusion_Density, double *T_fo, double *P_fo, double *E_fo, double *tau_fo, double *ux_fo, double *uy_fo, double *un_fo, double *dat_fo, double *dax_fo, double *day_fo, double *dan_fo, double *pixx_fo, double *pixy_fo, double *pixn_fo, double *piyy_fo, double *piyn_fo, double *bulkPi_fo, double *muB_fo, double *nB_fo, double *muQ_fo, double *nQ_fo, double *muS_fo, double *nS_fo,
+                                                    double *Vx_fo, double *Vy_fo, double *Vn_fo, Deltaf_Data * df_data, Gauss_Laguerre * laguerre)
   {
     // estimate the total mean particle yield from the freezeout surface
     // to determine the number of events you want to sample
@@ -721,7 +760,13 @@ double EmissionFunctionArray::calculate_total_yield(double * Equilibrium_Density
 
       double muB = 0.0;
       double alphaB = 0.0;
+      double muQ = 0.0;
+      double alphaQ = 0.0;
+      double muS = 0.0;
+      double alphaS = 0.0;
       double nB = 0.0;
+      double nQ = 0.0;
+      double nS = 0.0;
       double Vt = 0.0;                    // contravariant net baryon diffusion current V^mu
       double Vx = 0.0;                    // enforce orthogonality
       double Vy = 0.0;
@@ -742,6 +787,20 @@ double EmissionFunctionArray::calculate_total_yield(double * Equilibrium_Density
         alphaB = muB / T;
         baryon_enthalpy_ratio = nB / (E + P);
       }
+      if(INCLUDE_BARYON && !INCLUDE_BARYONDIFF_DELTAF)
+      {
+        muB = muB_fo[icell];
+        alphaB = muB / T;
+        nB  = nB_fo[icell];
+      }
+      if(MODE == 8 || MODE == 9 || MODE == 10){   
+        muQ = muQ_fo[icell];
+        alphaQ = muQ / T;
+        nQ = nQ_fo[icell];
+        muS = muS_fo[icell];
+        alphaS = muS / T;
+        nS = nS_fo[icell];
+      }
 
       // regulate bulk pressure if goes out of bounds given
       // by Jonah's feqmod to avoid gsl interpolation errors
@@ -754,7 +813,7 @@ double EmissionFunctionArray::calculate_total_yield(double * Equilibrium_Density
       }
 
       // evaluate df coefficients
-      deltaf_coefficients df = df_data->evaluate_df_coefficients(T, muB, E, P, bulkPi);
+      deltaf_coefficients df = df_data->evaluate_df_coefficients(T, muB, E, P, bulkPi,icell);
 
       // modified coefficients (Mike / Jonah)
       double F = df.F;
@@ -830,7 +889,8 @@ double EmissionFunctionArray::calculate_total_yield(double * Equilibrium_Density
     return Ntot;
   }
 
-void EmissionFunctionArray::sample_dN_pTdpTdphidy(double *Mass, double *Sign, double *Degeneracy, double *Baryon, int *MCID, double *Equilibrium_Density, double *Bulk_Density, double *Diffusion_Density, double *T_fo, double *P_fo, double *E_fo, double *tau_fo, double *x_fo, double *y_fo, double *eta_fo, double *ux_fo, double *uy_fo, double *un_fo, double *dat_fo, double *dax_fo, double *day_fo, double *dan_fo, double *pixx_fo, double *pixy_fo, double *pixn_fo, double *piyy_fo, double *piyn_fo, double *bulkPi_fo, double *muB_fo, double *nB_fo, double *Vx_fo, double *Vy_fo, double *Vn_fo, Deltaf_Data *df_data, Gauss_Laguerre * laguerre, Gauss_Legendre * legendre)
+void EmissionFunctionArray::sample_dN_pTdpTdphidy(double *Mass, double *Sign, double *Degeneracy, double *Baryon, int *MCID, double *Equilibrium_Density, double *Bulk_Density, double *Diffusion_Density, double *T_fo, double *P_fo, double *E_fo, double *tau_fo, double *x_fo, double *y_fo, double *eta_fo, double *ux_fo, double *uy_fo, double *un_fo, double *dat_fo, double *dax_fo, double *day_fo, double *dan_fo, double *pixx_fo, double *pixy_fo, double *pixn_fo, double *piyy_fo, double *piyn_fo, double *bulkPi_fo, double *muB_fo, double *nB_fo, double *Vx_fo, double *Vy_fo, double *Vn_fo, Deltaf_Data *df_data, Gauss_Laguerre * laguerre, Gauss_Legendre * legendre,
+                                                  double *Charge, double *muQ_fo, double *nQ_fo, double *Strange,double *muS_fo, double *nS_fo)
   {
     int npart = number_of_chosen_particles;
 
@@ -852,6 +912,7 @@ void EmissionFunctionArray::sample_dN_pTdpTdphidy(double *Mass, double *Sign, do
     // get average temperature (for fast mode)
     Plasma QGP;
     QGP.load_thermodynamic_averages();
+
     //if set_T_switch is on, override the temperature given by FO file  
     if (SET_T_SWITCH) QGP.temperature = T_SWITCH; 
     const double Tavg = QGP.temperature;
@@ -864,7 +925,7 @@ void EmissionFunctionArray::sample_dN_pTdpTdphidy(double *Mass, double *Sign, do
       printf("Using fast mode: (Tavg, muBavg) = (%lf, %lf)\n", Tavg, muBavg);
       if(DF_MODE == 3)
       {
-        deltaf_coefficients df_avg = df_data->evaluate_df_coefficients(Tavg, muBavg, 0.0, 0.0, 0.0);
+        deltaf_coefficients df_avg = df_data->evaluate_df_coefficients(Tavg, muBavg, 0.0, 0.0, 0.0,0);
         F_avg = df_avg.F;
         betabulk_avg = df_avg.betabulk;
       }
@@ -940,8 +1001,14 @@ void EmissionFunctionArray::sample_dN_pTdpTdphidy(double *Mass, double *Sign, do
       if(INCLUDE_BULK_DELTAF) bulkPi = bulkPi_fo[icell];
 
       double muB = 0.0;
+      double muQ = 0.0;
+      double muS = 0.0;
       double alphaB = 0.0;
+      double alphaQ = 0.0;
+      double alphaS = 0.0;
       double nB = 0.0;
+      double nQ = 0.0;
+      double nS = 0.0;
       double Vt = 0.0;                    // contravariant net baryon diffusion current V^mu
       double Vx = 0.0;                    // enforce orthogonality
       double Vy = 0.0;
@@ -951,6 +1018,7 @@ void EmissionFunctionArray::sample_dN_pTdpTdphidy(double *Mass, double *Sign, do
 
       if(INCLUDE_BARYON && INCLUDE_BARYONDIFF_DELTAF)
       {
+        std::cout << "Baryon and baryon diffusion included" << std::endl;
         muB = muB_fo[icell];
         nB = nB_fo[icell];
         Vx = Vx_fo[icell];
@@ -962,7 +1030,22 @@ void EmissionFunctionArray::sample_dN_pTdpTdphidy(double *Mass, double *Sign, do
         alphaB = muB / T;
         baryon_enthalpy_ratio = nB / (E + P);
       }
-
+      if(INCLUDE_BARYON && !INCLUDE_BARYONDIFF_DELTAF)
+      {
+        //std::cout << "Baryon included, baryon diffusion not included" << std::endl;
+        muB = muB_fo[icell];
+        nB = nB_fo[icell];
+        alphaB = muB / T;
+        baryon_enthalpy_ratio = nB / (E + P);
+      }
+      if(MODE==8 || MODE==9){
+        muQ = muQ_fo[icell];
+        alphaQ = muQ / T;
+        nQ = nQ_fo[icell];
+        muS = muS_fo[icell];
+        alphaS = muS / T;
+        nS = nS_fo[icell];
+      }
       // regulate bulk pressure if goes out of bounds given
       // by Jonah's feqmod to avoid gsl interpolation errors
       if(DF_MODE == 4)
@@ -973,7 +1056,8 @@ void EmissionFunctionArray::sample_dN_pTdpTdphidy(double *Mass, double *Sign, do
         else if(bulkPi / P >= bulkPi_over_Peq_max) bulkPi = P * (bulkPi_over_Peq_max - 1.e-5);
       }
 
-      deltaf_coefficients df = df_data->evaluate_df_coefficients(T, muB, E, P, bulkPi);
+
+      deltaf_coefficients df = df_data->evaluate_df_coefficients(T, muB, E, P, bulkPi,icell);
 
       // modified coefficients (Mike / Jonah)
       double F = df.F;
@@ -985,6 +1069,7 @@ void EmissionFunctionArray::sample_dN_pTdpTdphidy(double *Mass, double *Sign, do
       double z = df.z;
 
       // milne basis class
+
       Milne_Basis basis_vectors(ut, ux, uy, un, uperp, utperp, tau);
       basis_vectors.test_orthonormality(tau2);
 
@@ -1068,14 +1153,19 @@ void EmissionFunctionArray::sample_dN_pTdpTdphidy(double *Mass, double *Sign, do
           double degeneracy = Degeneracy[ipart];
           double sign = Sign[ipart];
           double baryon = Baryon[ipart];
+          double charge = Charge[ipart];
+          double strange = Strange[ipart];
+          //particle id 
+          int mcid = MCID[ipart];
 
-          dn_list[ipart] = max_particle_number(mbar, degeneracy, sign, baryon, T, alphaB, bulkPi, df, feqmod_breaks_down, laguerre, DF_MODE, INCLUDE_BARYON, neq_fact, J20_fact);
+          dn_list[ipart] = max_particle_number(mbar, degeneracy, sign, baryon, T, alphaB, bulkPi, df, feqmod_breaks_down, laguerre, DF_MODE, INCLUDE_BARYON, neq_fact, J20_fact,
+                                               alphaQ, charge, alphaS, strange);   
+          //check for positive pion at cell 20424
           dn_tot += dn_list[ipart];
         }
       }
-
+      double old = dn_tot;
       dn_tot *= (2.0 * y_max * ds_max);                      // multiply by the volume
-
       if(dn_tot <= 0.0) continue;
 
       // construct discrete probability distribution for particle types (weight[ipart] ~ dn_list[ipart] / dn_tot)
@@ -1133,6 +1223,15 @@ void EmissionFunctionArray::sample_dN_pTdpTdphidy(double *Mass, double *Sign, do
 
               break;
             }
+            case 8:
+            {
+              goto switch_to_linear_df;
+
+              pLRF = sample_momentum(generator_momentum, &acceptances, &samples, mass, sign, baryon, T, alphaB);
+              w_visc = compute_df_weight(pLRF, mass_squared, sign, baryon, T, alphaB, pimunu, bulkPi, Vmu, df, baryon_enthalpy_ratio, DF_MODE);
+
+              break;
+            }
             default:
             {
               printf("\nError: for viscous hydro momentum sampling please set df_mode = (1,2,3,4)\n");
@@ -1151,7 +1250,7 @@ void EmissionFunctionArray::sample_dN_pTdpTdphidy(double *Mass, double *Sign, do
 
           // new sampled particle info
           Sampled_Particle new_particle;
-
+  
           new_particle.chosen_index = chosen_index;
           new_particle.mcID = mcid;
           new_particle.tau = tau;

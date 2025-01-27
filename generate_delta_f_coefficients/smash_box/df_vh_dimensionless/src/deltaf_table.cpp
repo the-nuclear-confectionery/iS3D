@@ -39,7 +39,7 @@ int main()
 	double T_min = 0.1;			// min and max baryon chemical potential (GeV)
 	double T_max = 0.2;
 
-	double muB_min = 0.0;		// min and max baryon chemical potential (GeV)
+	double muB_min = -0.8;		// min and max baryon chemical potential (GeV)
 	double muB_max = 0.8;
 
 	int Tpts = 101;				// number of grid points

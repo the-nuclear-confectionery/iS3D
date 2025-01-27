@@ -88,10 +88,10 @@ void IS3D::run_particlization(int fo_from_file)
   // load freeze out information
   long FO_length = 0;
   FO_data_reader freeze_out_data(paraRdr, pathToInput);
-
+  std::cout << "Reading in freezeout surface from file" << std::endl;
   if (fo_from_file == 1) FO_length = freeze_out_data.get_number_cells(); //load length of surface from file
   else FO_length = tau.size(); //load length of surface from memory
-
+  std::cout << "Number of freezeout cells: " << FO_length << std::endl;
   FO_surf* surf_ptr = new FO_surf[FO_length];
 
   //load freezeout info from 'input/surface.dat'
@@ -147,14 +147,14 @@ void IS3D::run_particlization(int fo_from_file)
   df_data->compute_jonah_coefficients(particle_data, Nparticle);
   df_data->compute_particle_densities(particle_data, Nparticle);
   df_data->test_df_coefficients(-0.1);
-  
+    
 
 
   //FOR THIS READ IN TO WORK PROPERLY, chosen_particles.dat MUST HAVE AN EMPTY ROW AT THE END!
   //switch to different method of reading chosen_particles.dat file that doesn't
   //have this undesirable feature
   Table chosen_particles("PDG/chosen_particles.dat"); // skip others except for these particles
-
+  
   cout << "Total number of freezeout cells: " <<  FO_length << endl;
   cout << "Number of chosen particles: " << chosen_particles.getNumberOfRows() << endl;
 
@@ -165,15 +165,17 @@ void IS3D::run_particlization(int fo_from_file)
   int operation = paraRdr->getVal("operation");
   if (operation == 2) etaTableFile = "tables/eta/eta_trapezoid_table_41pt.dat";
   Table eta_tab(etaTableFile); //eta_s values and weights
-
+  std::cout << "Emitting particles..." << std::endl;
   EmissionFunctionArray efa(paraRdr, &chosen_particles, &pT_tab, &phi_tab, &y_tab, &eta_tab, particle_data, Nparticle, surf_ptr, FO_length, df_data);
-
+  std::cout << "Finished emitting particles." << std::endl;
   // old version for jetscape 
   //std::vector<Sampled_Particle> particle_event_list_in;
 
   //for oversampling in jetscape
   std::vector< std::vector< Sampled_Particle > >  particle_event_list_in;
+  std::cout << "Calculating spectra..." << std::endl;
   efa.calculate_spectra(particle_event_list_in);
+  std::cout << "Finished calculating spectra." << std::endl;
 
   //copy final particle list to memory to pass to JETSCAPE module
   if (operation == 2)
@@ -182,10 +184,13 @@ void IS3D::run_particlization(int fo_from_file)
     cout << "Event particle list contains " << particle_event_list_in.size() << " events" << endl;
     final_particles_ = particle_event_list_in;
   }
-
+  std::cout << "Finished copying final event particle lists to memory." << std::endl;
   delete [] surf_ptr;
+  std::cout << "Finished deleting surf_ptr." << std::endl;
   delete paraRdr;
+  std::cout << "Finished deleting paraRdr." << std::endl;
   delete df_data;
+  std::cout << "Finished deleting df_data." << std::endl;
 
   cout << "Done calculating particle spectra. Output stored in results folder. Goodbye!" << endl;
 

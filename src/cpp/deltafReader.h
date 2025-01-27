@@ -1,4 +1,3 @@
-
 #ifndef DELTAFREADER_H
 #define DELTAFREADER_H
 
@@ -9,9 +8,9 @@
 #include <gsl/gsl_errno.h>
 #include <gsl/gsl_spline.h>
 #include <gsl/gsl_interp.h>
+#include <vector> // Add this for std::vector
 
 using namespace std;
-
 
 class Deltaf_Data
 {
@@ -19,14 +18,15 @@ class Deltaf_Data
         ParameterReader * paraRdr;
 
         int hrg_eos; // type of pdg file for hadron resonance gas EoS
-        int mode; //type of freezeout surface, VH or VAH
-        int df_mode; // type of delta-f correction (e.g. 14-moment, CE, or modified distribution)
+        int mode; // type of freezeout surface, VH or VAH
+        int df_mode; // type of delta-f correction (e.g., 14-moment, CE, or modified distribution)
         int include_baryon;
 
         string hrg_eos_path;
         string urqmd = "deltaf_coefficients/vh/urqmd/"; // directories of df coefficient tables
         string smash = "deltaf_coefficients/vh/smash/";
         string smash_box = "deltaf_coefficients/vh/smash_box/";
+
     public:
         int points_T;
         int points_muB;
@@ -37,28 +37,24 @@ class Deltaf_Data
         double dT;
         double dmuB;
 
-        double * T_array;
-        double * muB_array;
-        //  Coefficients of 14 moment approximation (vhydro)
-        // df ~ ((c0-c2)m^2 + b.c1(u.p) + (4c2-c0)(u.p)^2).Pi + (b.c3 + c4(u.p))p_u.V^u + c5.p_u.p_v.pi^uv
-        double ** c0_data;
-        double ** c1_data;
-        double ** c2_data;
-        double ** c3_data;
-        double ** c4_data;
+        std::vector<double> T_array; // Changed from raw pointer to std::vector
+        std::vector<double> muB_array; // Changed from raw pointer to std::vector
 
-        //  Coefficients of Chapman Enskog expansion (vhydro)
-        // df ~ ((c0-c2)m^2 + b.c1(u.p) + (4c2-c0)(u.p)^2).Pi + (b.c3 + c4(u.p))p_u.V^u + c5.p_u.p_v.pi^uv
-        double ** F_data;
-        double ** G_data;
-        double ** betabulk_data;
-        double ** betaV_data;
-        double ** betapi_data;
+        // Coefficients of 14 moment approximation (vhydro)
+        std::vector<std::vector<double>> c0_data; // Changed from double**
+        std::vector<std::vector<double>> c1_data;
+        std::vector<std::vector<double>> c2_data;
+        std::vector<std::vector<double>> c3_data;
+        std::vector<std::vector<double>> c4_data;
 
-        // cubic splines of the coefficients as function of temperature only (neglect muB, nB, Vmu)
-        // (c1, G = 0) for muB = 0 and (c3, c4, betaV) aren't needed since they couple to baryon diffusion
-        // so in the cubic spline evaluation: just set (G, c1, c3, c4) = 0 and betaV = 1 (betaV is in denominator)
+        // Coefficients of Chapman-Enskog expansion (vhydro)
+        std::vector<std::vector<double>> F_data; // Changed from double**
+        std::vector<std::vector<double>> G_data;
+        std::vector<std::vector<double>> betabulk_data;
+        std::vector<std::vector<double>> betaV_data;
+        std::vector<std::vector<double>> betapi_data;
 
+        // Cubic splines of the coefficients
         gsl_spline * c0_spline;
         gsl_spline * c2_spline;
         gsl_spline * c3_spline;
@@ -85,20 +81,18 @@ class Deltaf_Data
         Deltaf_Data(ParameterReader * paraRdr_in);
         ~Deltaf_Data();
 
-        void load_df_coefficient_data();    // read the data files in /deltaf_coefficients/vh
-
+        void load_df_coefficient_data();    // Modified function
         void construct_cubic_splines();
 
-        // I skip the photon because I think it breaks down for lambda = -1
         void compute_jonah_coefficients(particle_info * particle_data, int Nparticle);
 
-        deltaf_coefficients evaluate_df_coefficients(double T, double muB, double E, double P, double bulkPi);
+        deltaf_coefficients evaluate_df_coefficients(double T, double muB, double E, double P, double bulkPi, int icell);
 
         deltaf_coefficients cubic_spline(double T, double E, double P, double bulkPi);
 
-        double calculate_bilinear(double ** f_data, double T, double muB, double TL, double TR, double muBL, double muBR, int iTL, int iTR, int imuBL, int imuBR);
+        double calculate_bilinear(std::vector<std::vector<double>>& f_data, double T, double muB, double TL, double TR, double muBL, double muBR, int iTL, int iTR, int imuBL, int imuBR);
 
-        deltaf_coefficients bilinear_interpolation(double T, double muB, double E, double P, double bulkPi);
+        deltaf_coefficients bilinear_interpolation(double T, double muB, double E, double P, double bulkPi, int icell);
 
         void test_df_coefficients(double bulkPi_over_P);
 
