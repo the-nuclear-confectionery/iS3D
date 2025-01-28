@@ -4,6 +4,7 @@
 #include "iS3D.h"
 #include "ParameterReader.h"
 #include <fstream>
+#include <cstdint>
 
 using namespace std;
 
